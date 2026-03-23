@@ -1228,53 +1228,64 @@
       window.open(url, '_blank');
     }
 
-    async function aprobarVenta(id) {
-      if (!confirm('¿Aprobar esta compra?')) return;
+   async function aprobarVenta(id) {
+  if (!confirm('¿Aprobar esta compra?')) return;
 
-      const { data, error } = await supabaseClient
-        .from('apartados_temp')
-        .select('*')
-        .eq('id', id)
-        .single();
+  const { data, error } = await supabaseClient
+    .from('apartados_temp')
+    .select('*')
+    .eq('id', id)
+    .single();
 
-      if (error || !data) {
-        alert('Error al obtener datos de la compra');
-        return;
-      }
+  if (error || !data) {
+    alert('Error al obtener datos de la compra');
+    return;
+  }
 
-      if (data.estado === 'aprobado') {
-        alert('Esta compra ya fue aprobada');
-        return;
-      }
+  const inserts = data.cartones.map(num => ({
+    numero_carton: num,
+    cedula: data.cedula,
+    nombre: data.nombre,
+    telefono: data.telefono,
+    apartado_id: id
+  }));
 
-      let duplicados = [];
-      try {
-        duplicados = await validarCartonesDuplicados(data.cartones || []);
-      } catch (e) {
-        alert('Error validando cartones: ' + e.message);
-        return;
-      }
+  const { error: insertError } = await supabaseClient
+    .from('cartones_vendidos')
+    .insert(inserts);
 
-      if (duplicados.length > 0) {
-        alert('No se puede aprobar. Ya existen cartones vendidos: ' + duplicados.join(', '));
-        return;
-      }
+  if (insertError) {
+    alert('Error al aprobar: ' + insertError.message);
+    return;
+  }
 
-      const resultado = await aprobarCompraDesdeRegistro(data);
+  const { error: deleteError } = await supabaseClient
+    .from('cartones_apartados')
+    .delete()
+    .eq('apartado_id', id);
 
-      if (resultado !== true) {
-        alert('No se pudo aprobar la compra. Revisa la consola para más detalle.');
-        return;
-      }
+  if (deleteError) {
+    alert('Se vendieron los cartones, pero falló al liberar apartados: ' + deleteError.message);
+    return;
+  }
 
-      await Promise.all([
-        cargarVentas(),
-        updateApprovedPlayersCount()
-      ]);
+  const { error: updateError } = await supabaseClient
+    .from('apartados_temp')
+    .update({
+      estado: 'aprobado',
+      aprobado_en: new Date().toISOString()
+    })
+    .eq('id', id);
 
-      alert('Compra aprobada exitosamente');
-    }
+  if (updateError) {
+    alert('Los cartones se insertaron, pero no se pudo cambiar el estado: ' + updateError.message);
+    console.error('updateError:', updateError);
+    return;
+  }
 
+  await cargarVentas();
+  alert('Compra aprobada exitosamente');
+}
     async function rechazarVenta(id) {
       if (!confirm('¿Rechazar? Los cartones serán liberados.')) return;
 
