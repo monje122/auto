@@ -499,6 +499,18 @@
             <div class="stat-label">Tiempo de Juego</div>
             <div class="stat-value" id="autoTime">00:00</div>
           </div>
+          <div class="stat-card">
+            <div class="stat-label">Recaudado Aprobado</div>
+            <div class="stat-value" id="montoTotalAprobado" style="font-size: 1.7em;">0.00 Bs</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Promociones Aprobadas</div>
+            <div class="stat-value" id="montoPromosAprobado" style="font-size: 1.7em;">0.00 Bs</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Individuales Aprobados</div>
+            <div class="stat-value" id="montoIndividualAprobado" style="font-size: 1.7em;">0.00 Bs</div>
+          </div>
         </div>
 
         <div class="control-panel">
@@ -699,13 +711,13 @@
       if (section === 'ventas') cargarVentas();
       if (section === 'promos') cargarPromociones();
       if (section === 'config') cargarAjustes();
-      if (section === 'config') cargarAjustes();
     }
 
     async function initAdmin() {
       await Promise.all([
         checkCurrentGame(),
         updateApprovedPlayersCount(),
+        updateApprovedRevenueStats(),
         cargarAjustes()
       ]);
       setupSubscriptions();
@@ -804,12 +816,14 @@
             if (document.getElementById('sec-ventas').classList.contains('active')) {
               await cargarVentas();
             }
+            await updateApprovedRevenueStats();
           }
         )
         .on('postgres_changes',
           { event: '*', schema: 'public', table: 'cartones_vendidos' },
           async () => {
             await updateApprovedPlayersCount();
+            await updateApprovedRevenueStats();
           }
         )
         .subscribe();
@@ -949,7 +963,8 @@
 
       await Promise.all([
         cargarVentas(),
-        updateApprovedPlayersCount()
+        updateApprovedPlayersCount(),
+        updateApprovedRevenueStats()
       ]);
 
       let mensaje = `${aprobadas} compra(s) aprobada(s).`;
@@ -1122,174 +1137,35 @@
       document.getElementById('autoPlayers').textContent = unicos.size;
     }
 
-    async function cargarAjustes() {
-      const input = document.getElementById('precioCartonInput');
-      const estado = document.getElementById('precioCartonEstado');
-      if (!input || !estado) return;
+    function formatearBs(valor) {
+      return `${Number(valor || 0).toFixed(2)} Bs`;
+    }
 
-      estado.textContent = 'Cargando configuración...';
-
+    async function updateApprovedRevenueStats() {
       const { data, error } = await supabaseClient
-        .from('configuracion')
-        .select('clave, valor')
-        .eq('clave', 'precio_carton')
-        .limit(1)
-        .maybeSingle();
+        .from('apartados_temp')
+        .select('precio_total, promocion_id')
+        .eq('estado', 'aprobado');
 
       if (error) {
-        console.error('Error cargando configuración:', error);
-        estado.textContent = 'No se pudo cargar el precio actual.';
+        console.error('Error calculando recaudación aprobada:', error);
         return;
       }
 
-      const precio = Number(data?.valor ?? 5);
-      input.value = Number.isFinite(precio) ? precio.toFixed(2) : '5.00';
-      estado.textContent = `Precio actual cargado: ${input.value} Bs`;
-    }
+      let total = 0;
+      let promos = 0;
+      let individuales = 0;
 
-    async function guardarPrecioCarton() {
-      const input = document.getElementById('precioCartonInput');
-      const estado = document.getElementById('precioCartonEstado');
-      const precio = parseFloat(input?.value);
+      (data || []).forEach(item => {
+        const monto = parseFloat(item.precio_total) || 0;
+        total += monto;
+        if (item.promocion_id !== null && item.promocion_id !== undefined) promos += monto;
+        else individuales += monto;
+      });
 
-      if (!Number.isFinite(precio) || precio <= 0) {
-        alert('Ingresa un precio válido mayor a 0');
-        return;
-      }
-
-      if (estado) estado.textContent = 'Guardando precio...';
-
-      const { data: existente, error: consultaError } = await supabaseClient
-        .from('configuracion')
-        .select('clave')
-        .eq('clave', 'precio_carton')
-        .limit(1)
-        .maybeSingle();
-
-      if (consultaError) {
-        console.error('Error consultando configuración:', consultaError);
-        if (estado) estado.textContent = 'Error consultando la configuración actual.';
-        alert('No se pudo consultar la configuración: ' + consultaError.message);
-        return;
-      }
-
-      let saveError = null;
-
-      if (existente) {
-        const { error } = await supabaseClient
-          .from('configuracion')
-          .update({ valor: precio.toFixed(2) })
-          .eq('clave', 'precio_carton');
-        saveError = error;
-      } else {
-        const { error } = await supabaseClient
-          .from('configuracion')
-          .insert([{
-            clave: 'precio_carton',
-            valor: precio.toFixed(2)
-          }]);
-        saveError = error;
-      }
-
-      if (saveError) {
-        console.error('Error guardando precio:', saveError);
-        if (estado) estado.textContent = 'No se pudo guardar el precio.';
-        alert('Error guardando el precio: ' + saveError.message);
-        return;
-      }
-
-      if (estado) estado.textContent = `Precio guardado correctamente: ${precio.toFixed(2)} Bs`;
-      alert('Precio del cartón actualizado correctamente');
-    }
-
-    async function reiniciarTodosLosCartones() {
-      const confirmacion = prompt('Esta acción liberará todos los cartones vendidos y apartados. Escribe REINICIAR para continuar.');
-      if (confirmacion !== 'REINICIAR') {
-        alert('Operación cancelada');
-        return;
-      }
-
-      if (autoInterval) {
-        clearInterval(autoInterval);
-        autoInterval = null;
-        document.getElementById('btnAutoMode').textContent = '🤖 Auto: OFF';
-        document.getElementById('btnAutoMode').style.background = 'var(--info)';
-      }
-
-      if (gameTimerInterval) {
-        clearInterval(gameTimerInterval);
-        gameTimerInterval = null;
-        document.getElementById('autoTime').textContent = '00:00';
-      }
-
-      const { error: apartadosError } = await supabaseClient
-        .from('cartones_apartados')
-        .delete()
-        .gte('numero_carton', 1);
-
-      if (apartadosError) {
-        alert('No se pudieron liberar los cartones apartados: ' + apartadosError.message);
-        return;
-      }
-
-      const { error: vendidosError } = await supabaseClient
-        .from('cartones_vendidos')
-        .delete()
-        .gte('numero_carton', 1);
-
-      if (vendidosError) {
-        alert('No se pudieron liberar los cartones vendidos: ' + vendidosError.message);
-        return;
-      }
-
-      const { error: tempError } = await supabaseClient
-        .from('apartados_temp')
-        .update({ estado: 'rechazado' })
-        .in('estado', ['apartado', 'pendiente', 'aprobado']);
-
-      if (tempError) {
-        alert('Se liberaron los cartones, pero no se pudieron marcar las compras como reiniciadas: ' + tempError.message);
-        return;
-      }
-
-      const { error: bolasError } = await supabaseClient
-        .from('bolas_auto')
-        .delete()
-        .gte('numero', 1);
-
-      if (bolasError) {
-        console.warn('No se pudieron borrar las bolas anteriores:', bolasError);
-      }
-
-      if (currentGame?.id) {
-        const { error: gameError } = await supabaseClient
-          .from('bingo_automatico')
-          .update({
-            estado: 'finalizado',
-            finalizado_en: new Date().toISOString()
-          })
-          .eq('id', currentGame.id);
-
-        if (gameError) {
-          console.warn('No se pudo cerrar el juego actual:', gameError);
-        }
-      }
-
-      currentGame = null;
-      availableBalls = [];
-      document.getElementById('currentBallDisplay').style.display = 'none';
-      document.getElementById('waitingMsg').style.display = 'block';
-      document.getElementById('winnerDisplay').classList.remove('active');
-      document.getElementById('autoBalls').textContent = '0';
-      updateAutoUI(null);
-
-      await Promise.all([
-        cargarVentas(),
-        updateApprovedPlayersCount(),
-        cargarAjustes()
-      ]);
-
-      alert('Todos los cartones fueron liberados correctamente');
+      document.getElementById('montoTotalAprobado').textContent = formatearBs(total);
+      document.getElementById('montoPromosAprobado').textContent = formatearBs(promos);
+      document.getElementById('montoIndividualAprobado').textContent = formatearBs(individuales);
     }
 
     function getLetter(num) {
@@ -1324,7 +1200,7 @@
           precio,
           descripcion: desc,
           activa: true,
-          creada_en: new Date().toISOString()
+          created_at: new Date().toISOString()
         }]);
 
       if (error) {
@@ -1360,14 +1236,16 @@
           </div>
           <div style="text-align: right;">
             <div class="promo-price">${Number(p.precio).toFixed(2)} Bs</div>
-            <button onclick="togglePromo(${p.id}, ${!p.activa})"
-              style="margin-top: 10px; padding: 5px 15px; border: none; border-radius: 5px; cursor: pointer; background: ${p.activa ? 'var(--danger)' : 'var(--success)'}; color: white;">
-              ${p.activa ? 'Desactivar' : 'Activar'}
-            </button>
-            <button onclick="eliminarPromo(${p.id})"
-    style="padding: 5px 15px; border: none; border-radius: 5px; cursor: pointer; background: #c0392b; color: white;">
-    🗑 Eliminar
-  </button>
+            <div style="margin-top: 10px; display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
+              <button onclick="togglePromo(${p.id}, ${!p.activa})"
+                style="padding: 5px 15px; border: none; border-radius: 5px; cursor: pointer; background: ${p.activa ? 'var(--danger)' : 'var(--success)'}; color: white;">
+                ${p.activa ? 'Desactivar' : 'Activar'}
+              </button>
+              <button onclick="eliminarPromo(${p.id})"
+                style="padding: 5px 15px; border: none; border-radius: 5px; cursor: pointer; background: #c0392b; color: white;">
+                🗑 Eliminar
+              </button>
+            </div>
           </div>
         </div>
       `).join('');
@@ -1523,7 +1401,8 @@ async function eliminarPromo(id) {
 
       await Promise.all([
         cargarVentas(),
-        updateApprovedPlayersCount()
+        updateApprovedPlayersCount(),
+        updateApprovedRevenueStats()
       ]);
 
       alert('Compra aprobada exitosamente');
@@ -1578,7 +1457,8 @@ async function eliminarPromo(id) {
 
       await Promise.all([
         cargarVentas(),
-        updateApprovedPlayersCount()
+        updateApprovedPlayersCount(),
+        updateApprovedRevenueStats()
       ]);
 
       alert('Cartones liberados correctamente');
@@ -1725,7 +1605,8 @@ async function eliminarPromo(id) {
       await Promise.all([
         checkCurrentGame(),
         cargarVentas(),
-        updateApprovedPlayersCount()
+        updateApprovedPlayersCount(),
+        updateApprovedRevenueStats()
       ]);
 
       if (errores.length > 0) {
