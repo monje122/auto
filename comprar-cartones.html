@@ -496,6 +496,132 @@
       color: var(--danger);
     }
 
+
+    .carton-preview-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.88);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 3000;
+    }
+
+    .carton-preview-modal.activo {
+      display: flex;
+      animation: fadeIn 0.25s ease;
+    }
+
+    .carton-preview-dialog {
+      width: min(95vw, 560px);
+      background: linear-gradient(135deg, rgba(26,26,46,0.98), rgba(15,15,26,0.98));
+      border: 2px solid var(--primary);
+      border-radius: 24px;
+      padding: 24px;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.55);
+      position: relative;
+    }
+
+    .carton-preview-close {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      font-size: 1.4em;
+      background: rgba(255,255,255,0.1);
+      color: white;
+    }
+
+    .carton-preview-head {
+      text-align: center;
+      margin-bottom: 18px;
+    }
+
+    .carton-preview-head h3 {
+      font-family: 'Orbitron', sans-serif;
+      color: var(--primary);
+      margin-bottom: 8px;
+      font-size: 1.5em;
+    }
+
+    .carton-preview-status {
+      display: inline-block;
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-weight: bold;
+      font-size: 0.95em;
+    }
+
+    .carton-preview-status.disponible {
+      background: rgba(39, 174, 96, 0.18);
+      color: var(--success);
+    }
+
+    .carton-preview-status.seleccionado {
+      background: rgba(39, 174, 96, 0.22);
+      color: #7dffb0;
+    }
+
+    .carton-preview-status.apartado {
+      background: rgba(243, 156, 18, 0.18);
+      color: var(--warning);
+    }
+
+    .carton-preview-status.ocupado {
+      background: rgba(231, 76, 60, 0.18);
+      color: var(--danger);
+    }
+
+    .carton-preview-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      padding: 18px;
+      background: rgba(0,0,0,0.28);
+      border-radius: 18px;
+      margin-bottom: 18px;
+    }
+
+    .carton-preview-cell {
+      min-height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      font-weight: bold;
+      font-size: 1.1em;
+    }
+
+    .carton-preview-cell.header {
+      font-family: 'Orbitron', sans-serif;
+      background: rgba(255,165,0,0.2);
+      color: var(--secondary);
+      border: 1px solid rgba(255,165,0,0.3);
+    }
+
+    .carton-preview-cell.number {
+      background: rgba(255,255,255,0.92);
+      color: #1c2a39;
+    }
+
+    .carton-preview-cell.free {
+      background: linear-gradient(135deg, var(--primary), #ff6b35);
+      color: white;
+      font-size: 0.9em;
+    }
+
+    .carton-preview-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
     @media (max-width: 768px) {
       .header h1 { font-size: 1.8em; }
       .cartones-grid { grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); }
@@ -680,6 +806,24 @@
 
   </div>
 
+
+  <div id="cartonPreviewModal" class="carton-preview-modal" onclick="cerrarPreviewCarton(event)">
+    <div class="carton-preview-dialog" onclick="event.stopPropagation()">
+      <button class="carton-preview-close" type="button" onclick="cerrarPreviewCarton()">×</button>
+      <div class="carton-preview-head">
+        <h3 id="cartonPreviewTitulo">Cartón #0001</h3>
+        <div id="cartonPreviewEstado" class="carton-preview-status disponible">Disponible</div>
+      </div>
+      <div id="cartonPreviewGrid" class="carton-preview-grid"></div>
+      <div class="carton-preview-actions">
+        <button class="btn-secundario" type="button" onclick="cerrarPreviewCarton()">Cerrar</button>
+        <button class="btn-principal" type="button" id="btnPreviewSeleccion" onclick="toggleCartonDesdePreview()">
+          Seleccionar este cartón
+        </button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <script>
@@ -702,6 +846,15 @@
     let suscripcionTiempoReal = null;
     let pagoEnviado = false;
     let procesandoSeleccion = false;
+    let cartonPreviewNumero = null;
+
+    const RANGOS_CARTON = {
+      B: [1, 15],
+      I: [16, 30],
+      N: [31, 45],
+      G: [46, 60],
+      O: [61, 75]
+    };
 
     function normalizarCedula(valor) {
       const limpio = (valor || '').trim().toUpperCase().replace(/\s+/g, '');
@@ -925,7 +1078,7 @@
         div.className = 'carton-item';
         div.dataset.numero = i;
         div.textContent = i;
-        div.onclick = () => toggleCarton(i);
+        div.onclick = () => abrirPreviewCarton(i);
         grid.appendChild(div);
       }
     }
@@ -993,6 +1146,136 @@
 
       actualizarVisualGrid();
       actualizarStats();
+    }
+
+    function generarCartonDesdeNumero(numeroCarton) {
+      let seed = Number(numeroCarton) * 12345;
+      const random = () => {
+        seed = (seed * 9301 + 49297) % 233280;
+        return seed / 233280;
+      };
+
+      const carton = {};
+      Object.keys(RANGOS_CARTON).forEach((letra) => {
+        const [min, max] = RANGOS_CARTON[letra];
+        const nums = new Set();
+        const cantidad = letra === 'N' ? 4 : 5;
+
+        while (nums.size < cantidad) {
+          const num = min + Math.floor(random() * (max - min + 1));
+          nums.add(num);
+        }
+
+        carton[letra] = Array.from(nums).sort((a, b) => a - b);
+      });
+
+      return carton;
+    }
+
+    function obtenerEstadoCartonPreview(numero) {
+      if (cartonesSeleccionados.has(numero)) {
+        return { clase: 'seleccionado', texto: 'Actualmente seleccionado' };
+      }
+
+      if (cartonesOcupados.has(numero)) {
+        return { clase: 'ocupado', texto: 'Ya vendido' };
+      }
+
+      if (cartonesApartados.has(numero)) {
+        return { clase: 'apartado', texto: 'Temporalmente apartado' };
+      }
+
+      return { clase: 'disponible', texto: 'Disponible' };
+    }
+
+    function renderizarPreviewCarton(numero) {
+      const carton = generarCartonDesdeNumero(numero);
+      const grid = document.getElementById('cartonPreviewGrid');
+      const titulo = document.getElementById('cartonPreviewTitulo');
+      const estado = document.getElementById('cartonPreviewEstado');
+      const btn = document.getElementById('btnPreviewSeleccion');
+      const letras = ['B', 'I', 'N', 'G', 'O'];
+
+      titulo.textContent = `Cartón #${String(numero).padStart(4, '0')}`;
+
+      const infoEstado = obtenerEstadoCartonPreview(numero);
+      estado.className = `carton-preview-status ${infoEstado.clase}`;
+      estado.textContent = infoEstado.texto;
+
+      let html = '';
+      letras.forEach(letra => {
+        html += `<div class="carton-preview-cell header">${letra}</div>`;
+      });
+
+      for (let fila = 0; fila < 5; fila++) {
+        for (let col = 0; col < 5; col++) {
+          const letra = letras[col];
+
+          if (letra === 'N' && fila === 2) {
+            html += '<div class="carton-preview-cell free">FREE</div>';
+            continue;
+          }
+
+          const idx = (letra === 'N' && fila > 2) ? fila - 1 : fila;
+          html += `<div class="carton-preview-cell number">${carton[letra][idx]}</div>`;
+        }
+      }
+
+      grid.innerHTML = html;
+
+      if (cartonesOcupados.has(numero)) {
+        btn.disabled = true;
+        btn.textContent = 'Cartón vendido';
+        return;
+      }
+
+      if (cartonesApartados.has(numero) && !cartonesSeleccionados.has(numero)) {
+        btn.disabled = true;
+        btn.textContent = 'Temporalmente apartado';
+        return;
+      }
+
+      if (!datosComprador.cantidad) {
+        btn.disabled = true;
+        btn.textContent = 'Define cantidad primero';
+        return;
+      }
+
+      if (cartonesSeleccionados.has(numero)) {
+        btn.disabled = false;
+        btn.textContent = 'Quitar de la selección';
+        return;
+      }
+
+      if (cartonesSeleccionados.size >= datosComprador.cantidad) {
+        btn.disabled = true;
+        btn.textContent = 'Límite de selección alcanzado';
+        return;
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Seleccionar este cartón';
+    }
+
+    async function abrirPreviewCarton(numero) {
+      if (!document.getElementById('step3').classList.contains('active')) return;
+
+      cartonPreviewNumero = Number(numero);
+      await cargarEstadoCartones();
+      renderizarPreviewCarton(cartonPreviewNumero);
+      document.getElementById('cartonPreviewModal').classList.add('activo');
+    }
+
+    function cerrarPreviewCarton(event) {
+      if (event && event.target && event.target.id !== 'cartonPreviewModal') return;
+      document.getElementById('cartonPreviewModal').classList.remove('activo');
+      cartonPreviewNumero = null;
+    }
+
+    async function toggleCartonDesdePreview() {
+      if (cartonPreviewNumero === null) return;
+      await toggleCarton(cartonPreviewNumero);
+      renderizarPreviewCarton(cartonPreviewNumero);
     }
 
     function actualizarStats() {
@@ -1322,6 +1605,12 @@
 
       cambiarPaso(5);
     }
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        cerrarPreviewCarton();
+      }
+    });
 
     window.addEventListener('beforeunload', async () => {
       if (suscripcionTiempoReal) {
