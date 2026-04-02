@@ -784,6 +784,8 @@
     let resumenPremios = { recaudado: 0, pool: 0, admin: 0, lleno: 0, fila: 0, columna: 0 };
     let premioTemporalActivo = false;
     let premiosMostrados = { fila: null, columna: null, lleno: null };
+    let reinicioProgramado = false;
+let temporizadorReinicio = null;
 
     const RANGOS = {
       B: [1, 15], I: [16, 30], N: [31, 45], G: [46, 60], O: [61, 75]
@@ -1617,14 +1619,29 @@
       return 'O';
     }
 
-    function marcarNumeroEnCarton(numeroCarton, numero) {
+   function numeroExisteEnCarton(numeroCarton, numero) {
+  const matriz = obtenerMatrizCarton(numeroCarton);
+  for (const fila of matriz) {
+    for (const valor of fila) {
+      if (valor === numero) return true;
+    }
+  }
+  return false;
+}
+
+function marcarNumeroEnCarton(numeroCarton, numero) {
   asegurarTrackingCarton(numeroCarton);
 
+  // Validar contra el cartón real, no contra lo visible en pantalla
+  if (!numeroExisteEnCarton(numeroCarton, numero)) return;
+
   const yaMarcado = numerosMarcadosPorCarton[numeroCarton].has(numero);
+
   if (!yaMarcado) {
     numerosMarcadosPorCarton[numeroCarton].add(numero);
   }
 
+  // Si está visible, lo pinta
   const celdas = document.querySelectorAll(
     `[data-carton="${numeroCarton}"][data-numero="${numero}"]`
   );
@@ -1644,18 +1661,26 @@
 }
 
     function marcarNumeroSilencioso(numero) {
-      obtenerUniversoCartones().forEach(numCarton => {
-        asegurarTrackingCarton(numCarton);
-        const celdas = document.querySelectorAll(`[data-carton="${numCarton}"][data-numero="${numero}"]`);
-        celdas.forEach(celda => {
-          if (!celda.classList.contains('marcado')) {
-            celda.classList.add('marcado');
-            numerosMarcadosPorCarton[numCarton].add(numero);
-          }
-        });
-        actualizarProgreso(numCarton);
-      });
-    }
+  obtenerUniversoCartones().forEach(numCarton => {
+    asegurarTrackingCarton(numCarton);
+
+    if (!numeroExisteEnCarton(numCarton, numero)) return;
+
+    numerosMarcadosPorCarton[numCarton].add(numero);
+
+    const celdas = document.querySelectorAll(
+      `[data-carton="${numCarton}"][data-numero="${numero}"]`
+    );
+
+    celdas.forEach(celda => {
+      if (!celda.classList.contains('marcado')) {
+        celda.classList.add('marcado');
+      }
+    });
+
+    actualizarProgreso(numCarton);
+  });
+}
 
     function actualizarProgreso(numeroCarton) {
       const marcados = numerosMarcadosPorCarton[numeroCarton].size - 1;
@@ -1722,8 +1747,13 @@
         if (updateError) throw updateError;
 
         if (data && data.length > 0) {
-          mostrarGanador(numeroCarton);
-        }
+  mostrarGanador(numeroCarton);
+
+  if (temporizadorReinicio) clearTimeout(temporizadorReinicio);
+  temporizadorReinicio = setTimeout(async () => {
+    await reiniciarDespuesDelJuego();
+  }, 8000);
+}
       } catch (error) {
         console.error('❌ Error declarando ganador:', error);
       } finally {
@@ -1751,6 +1781,11 @@
         mostrarGanador(ganadorNum);
         return;
       }
+      if (!temporizadorReinicio) {
+  temporizadorReinicio = setTimeout(async () => {
+    await reiniciarDespuesDelJuego();
+  }, 8000);
+}
 
       const estadoEl = document.getElementById('estadoJuego');
       estadoEl.textContent = `🏆 Ganó: ${ganadorNombre || 'Cartón #' + ganadorId}`;
@@ -1809,11 +1844,89 @@
       banner.classList.add('active');
       setTimeout(() => banner.classList.remove('active'), 5000);
     }
+    
+    async function reiniciarDespuesDelJuego() {
+  if (reinicioProgramado) return;
+  reinicioProgramado = true;
+
+  try {
+    const { error: deleteApartadosError } = await supabaseClient
+      .from('cartones_apartados')
+      .delete()
+      .gte('numero_carton', 1);
+
+    if (deleteApartadosError) {
+      console.error('Error borrando cartones apartados:', deleteApartadosError);
+    }
+
+    const { error: deleteVendidosError } = await supabaseClient
+      .from('cartones_vendidos')
+      .delete()
+      .gte('numero_carton', 1);
+
+    if (deleteVendidosError) {
+      console.error('Error borrando cartones vendidos:', deleteVendidosError);
+    }
+
+    const { error: resetComprasError } = await supabaseClient
+      .from('apartados_temp')
+      .update({ estado: 'rechazado' })
+      .in('estado', ['apartado', 'pendiente', 'aprobado']);
+
+    if (resetComprasError) {
+      console.error('Error reseteando compras:', resetComprasError);
+    }
+
+    cartonesEnSala = [];
+    cartonesComprados = [];
+    numerosMarcadosPorCarton = {};
+    bolasCantadas = [];
+    pendingBalls = [];
+    bolasProcesadas = new Set();
+    premioTemporalActivo = false;
+    premiosMostrados = { fila: null, columna: null, lleno: null };
+
+    document.getElementById('historialBolas').innerHTML = `
+      <p style="color: rgba(255,255,255,0.4); width: 100%; text-align: center;">
+        Las bolas aparecerán aquí cuando inicie el juego
+      </p>
+    `;
+    document.getElementById('cartonesContainer').innerHTML = `
+      <div class="no-cartones">
+        <h2>🎫 Juego reiniciado</h2>
+        <p>Todos los cartones fueron liberados. Ya puedes comprar nuevos cartones.</p>
+      </div>
+    `;
+
+    document.getElementById('infoCartones').textContent = '0 cartón(es)';
+    document.getElementById('subtitulo').textContent = 'Compra nuevos cartones para el siguiente juego';
+    document.getElementById('premiosTopline').textContent = 'Cartones aprobados en juego: 0';
+    document.getElementById('modalGanador').classList.remove('activo');
+document.querySelector('#modalGanador h1').textContent = '🎉 ¡BINGO! 🎉';
+const botonCerrar = document.getElementById('modalCloseBtn');
+if (botonCerrar) botonCerrar.style.display = 'inline-block';
+    document.getElementById('estadoJuego').className = 'estado-juego estado-esperando';
+document.getElementById('estadoJuego').textContent = '⏳ ESPERANDO NUEVO JUEGO...';
+
+document.getElementById('bolaActual').style.display = 'none';
+document.getElementById('esperandoMensaje').style.display = 'block';
+document.getElementById('esperandoMensaje').textContent =
+  'Juego reiniciado. Compra nuevos cartones para el siguiente juego.';
+
+    await cargarResumenPremios();
+    await cargarCartonesEnSala();
+  } catch (error) {
+    console.error('Error en reinicio automático:', error);
+  } finally {
+    reinicioProgramado = false;
+    temporizadorReinicio = null;
+  }
+}
 
     window.addEventListener('beforeunload', () => {
-      suscripciones.forEach(s => s.unsubscribe());
-    });
-
+  suscripciones.forEach(s => s.unsubscribe());
+  if (temporizadorReinicio) clearTimeout(temporizadorReinicio);
+});
     init();
   </script>
 
