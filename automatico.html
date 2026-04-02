@@ -459,6 +459,96 @@
     .ingreso-danger { color: var(--danger); }
     .ingreso-success { color: var(--success); }
 
+
+    .cartones-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 15px;
+      flex-wrap: wrap;
+      margin: 20px 0 10px;
+      padding: 18px 22px;
+      background: rgba(0,0,0,0.25);
+      border-radius: 18px;
+    }
+
+    .cartones-toolbar-info {
+      color: rgba(255,255,255,0.8);
+      font-size: 0.98em;
+    }
+
+    .vista-toggle {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .btn-vista {
+      border: 1px solid rgba(255,165,0,0.35);
+      background: rgba(255,255,255,0.06);
+      color: white;
+      padding: 10px 16px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .btn-vista.active {
+      background: linear-gradient(135deg, var(--primary), #ff6b35);
+      color: #000;
+      border-color: transparent;
+    }
+
+    .carton-meta {
+      margin-top: 8px;
+      text-align: center;
+      color: rgba(255,255,255,0.68);
+      font-size: 0.9em;
+      line-height: 1.35;
+    }
+
+    .paginacion-cartones {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .btn-pagina {
+      border: 1px solid rgba(255,165,0,0.35);
+      background: rgba(255,255,255,0.06);
+      color: white;
+      padding: 10px 16px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .btn-pagina:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .page-chip {
+      min-width: 42px;
+      height: 42px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,165,0,0.35);
+      background: rgba(255,255,255,0.06);
+      color: white;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .page-chip.active {
+      background: linear-gradient(135deg, var(--primary), #ff6b35);
+      color: #000;
+      border-color: transparent;
+    }
+
     @media (max-width: 768px) {
       .header h1 { font-size: 1.8em; }
       .bola-actual { width: 120px; height: 120px; font-size: 3em; }
@@ -532,6 +622,17 @@
       </div>
     </div>
 
+    <div class="cartones-toolbar">
+      <div class="vista-toggle">
+        <button id="btnVistaMios" class="btn-vista active" onclick="cambiarModoVista('mios')">👤 Mis cartones</button>
+        <button id="btnVistaTodos" class="btn-vista" onclick="cambiarModoVista('todos')">🌍 Otros cartones aprobados</button>
+      </div>
+      <div class="cartones-toolbar-info" id="cartonesToolbarInfo">
+        Mostrando cartones 1 al 10
+      </div>
+      <div class="paginacion-cartones" id="paginacionCartones"></div>
+    </div>
+
     <div id="cartonesContainer" class="cartones-container">
       <!-- Cartones se generan dinámicamente -->
     </div>
@@ -569,6 +670,10 @@
     let gameId = null;
     let pendingBalls = [];
     let bolasProcesadas = new Set();
+    let paginaActualCartones = 1;
+    const CARTONES_POR_PAGINA = 10;
+    let modoVistaCartones = 'mios';
+    let cartonesEnSala = [];
 
     const RANGOS = {
       B: [1, 15], I: [16, 30], N: [31, 45], G: [46, 60], O: [61, 75]
@@ -596,6 +701,84 @@
       el.className = 'ingreso-mensaje';
       if (tipo) el.classList.add(`ingreso-${tipo}`);
       el.textContent = mensaje;
+    }
+
+    function normalizarCedula(valor) {
+      const limpio = (valor || '').trim().toUpperCase().replace(/\s+/g, '');
+      if (!limpio) return '';
+      const prefijo = /^[VEJPGR]-?/i.test(limpio) ? limpio[0].toUpperCase() : '';
+      const digitos = limpio.replace(/\D/g, '');
+      if (!digitos) return limpio;
+      return prefijo ? `${prefijo}-${digitos}` : digitos;
+    }
+
+    function esCedulaDelJugador(cedula) {
+      const base = normalizarCedula(datosJugador.cedula || '');
+      const actual = normalizarCedula(cedula || '');
+      if (!base || !actual) return false;
+      if (base === actual) return true;
+      return base.replace(/\D/g, '') === actual.replace(/\D/g, '');
+    }
+
+    function asegurarTrackingCarton(numeroCarton) {
+      if (!numerosMarcadosPorCarton[numeroCarton]) {
+        numerosMarcadosPorCarton[numeroCarton] = new Set(['LIBRE']);
+      }
+      return numerosMarcadosPorCarton[numeroCarton];
+    }
+
+    function obtenerCartonesVisibles() {
+      if (modoVistaCartones === 'todos') {
+        return cartonesEnSala.filter(item => !esCedulaDelJugador(item.cedula));
+      }
+      return cartonesComprados.map(numero => ({
+        numero_carton: numero,
+        nombre: datosJugador.nombre || 'Jugador',
+        cedula: datosJugador.cedula || ''
+      }));
+    }
+
+    function obtenerUniversoCartones() {
+      const universo = new Set(cartonesComprados);
+      cartonesEnSala.forEach(item => universo.add(Number(item.numero_carton)));
+      return Array.from(universo);
+    }
+
+    async function cargarCartonesEnSala() {
+      const { data, error } = await supabaseClient
+        .from('cartones_vendidos')
+        .select('numero_carton, nombre, cedula')
+        .order('numero_carton', { ascending: true });
+
+      if (error) {
+        console.error('❌ Error cargando cartones en sala:', error);
+        return;
+      }
+
+      cartonesEnSala = (data || []).map(item => ({
+        numero_carton: Number(item.numero_carton),
+        nombre: item.nombre || 'Jugador',
+        cedula: item.cedula || ''
+      }));
+
+      cartonesEnSala.forEach(item => asegurarTrackingCarton(item.numero_carton));
+    }
+
+    async function cambiarModoVista(modo) {
+      if (modo !== 'mios' && modo !== 'todos') return;
+      if (modo === modoVistaCartones) return;
+
+      if (modo === 'todos') {
+        await cargarCartonesEnSala();
+      }
+
+      modoVistaCartones = modo;
+      paginaActualCartones = 1;
+
+      document.getElementById('btnVistaMios').classList.toggle('active', modo === 'mios');
+      document.getElementById('btnVistaTodos').classList.toggle('active', modo === 'todos');
+
+      renderizarPaginaCartones();
     }
 
     async function init() {
@@ -650,11 +833,13 @@
           nombre: data[0].nombre || sessionStorage.getItem('nombreComprador') || 'Jugador'
         };
 
-        cartonesComprados = [...new Set(data.map(item => item.numero_carton))].sort((a, b) => a - b);
+        cartonesComprados = [...new Set(data.map(item => Number(item.numero_carton)))].sort((a, b) => a - b);
         numerosMarcadosPorCarton = {};
         cartonesComprados.forEach(num => {
           numerosMarcadosPorCarton[num] = new Set(['LIBRE']);
         });
+
+        await cargarCartonesEnSala();
 
         sessionStorage.setItem('modoJuego', 'solo-comprados');
         sessionStorage.setItem('cedulaComprador', datosJugador.cedula);
@@ -704,23 +889,56 @@
     function mostrarPantallaJuego() {
       document.getElementById('infoNombre').textContent = datosJugador.nombre;
       document.getElementById('infoCedula').textContent = datosJugador.cedula;
-      document.getElementById('infoCartones').textContent = cartonesComprados.join(', ');
+      document.getElementById('infoCartones').textContent = `${cartonesComprados.length} cartón(es)`;
       document.getElementById('subtitulo').textContent =
-        `Viendo ${cartonesComprados.length} cartón(es): ${cartonesComprados.join(', ')}`;
+        `Tienes ${cartonesComprados.length} cartón(es) en juego`;
 
+      modoVistaCartones = 'mios';
+      document.getElementById('btnVistaMios').classList.add('active');
+      document.getElementById('btnVistaTodos').classList.remove('active');
+      paginaActualCartones = 1;
+      renderizarPaginaCartones();
+    }
+
+    function renderizarPaginaCartones() {
       const container = document.getElementById('cartonesContainer');
+      const cartonesVisibles = obtenerCartonesVisibles();
+      const totalPaginas = Math.max(1, Math.ceil(cartonesVisibles.length / CARTONES_POR_PAGINA));
+      if (paginaActualCartones > totalPaginas) paginaActualCartones = totalPaginas;
+      if (paginaActualCartones < 1) paginaActualCartones = 1;
+
+      const inicio = (paginaActualCartones - 1) * CARTONES_POR_PAGINA;
+      const fin = inicio + CARTONES_POR_PAGINA;
+      const cartonesPagina = cartonesVisibles.slice(inicio, fin);
+
       container.innerHTML = '';
 
-      cartonesComprados.forEach((numeroCarton) => {
+      if (cartonesPagina.length === 0) {
+        container.innerHTML = `
+          <div class="no-cartones">
+            <h2>🎫 No hay cartones para mostrar</h2>
+            <p>${modoVistaCartones === 'todos' ? 'Todavía no hay otros cartones aprobados en juego.' : 'No tienes cartones aprobados.'}</p>
+          </div>
+        `;
+        actualizarPaginacionCartones();
+        return;
+      }
+
+      cartonesPagina.forEach((item) => {
+        const numeroCarton = Number(item.numero_carton);
+        asegurarTrackingCarton(numeroCarton);
         const carton = generarCartonDesdeNumero(numeroCarton);
         const section = document.createElement('div');
         section.className = 'carton-section';
         section.id = `carton-${numeroCarton}`;
 
+        const esMio = modoVistaCartones === 'mios' || esCedulaDelJugador(item.cedula);
+
         section.innerHTML = `
           <div class="carton-header">
             <h2>🎫 CARTÓN #${String(numeroCarton).padStart(4, '0')}</h2>
-            <small style="color: rgba(255,255,255,0.6);">Tu cartón personal</small>
+            <small style="color: rgba(255,255,255,0.6);">${esMio ? 'Tu cartón personal' : 'Cartón aprobado en juego'}</small>
+            ${!esMio ? `<div class="carton-meta">${item.nombre || 'Jugador'}<br><span>${item.cedula || ''}</span></div>` : ''}
           </div>
           <div class="progreso-barra">
             <div id="barra-${numeroCarton}" class="progreso-fill" style="width: 4%">1/24</div>
@@ -733,7 +951,60 @@
 
         container.appendChild(section);
         renderizarGrid(numeroCarton, carton);
+        hidratarCartonRenderizado(numeroCarton);
       });
+
+      actualizarPaginacionCartones();
+    }
+
+    function hidratarCartonRenderizado(numeroCarton) {
+      const marcados = numerosMarcadosPorCarton[numeroCarton] || new Set(['LIBRE']);
+      marcados.forEach(valor => {
+        if (valor === 'LIBRE') return;
+        const celdas = document.querySelectorAll(`[data-carton="${numeroCarton}"][data-numero="${valor}"]`);
+        celdas.forEach(celda => celda.classList.add('marcado'));
+      });
+      actualizarProgreso(numeroCarton);
+    }
+
+    function actualizarPaginacionCartones() {
+      const info = document.getElementById('cartonesToolbarInfo');
+      const paginacion = document.getElementById('paginacionCartones');
+      const cartonesVisibles = obtenerCartonesVisibles();
+      const total = cartonesVisibles.length;
+      const totalPaginas = Math.max(1, Math.ceil(total / CARTONES_POR_PAGINA));
+      const inicio = total === 0 ? 0 : ((paginaActualCartones - 1) * CARTONES_POR_PAGINA) + 1;
+      const fin = Math.min(total, paginaActualCartones * CARTONES_POR_PAGINA);
+
+      info.textContent = total === 0
+        ? (modoVistaCartones === 'todos'
+            ? 'No hay otros cartones aprobados para mostrar'
+            : 'No tienes cartones aprobados en esta sala')
+        : (modoVistaCartones === 'todos'
+            ? `Mostrando otros cartones ${inicio} al ${fin} de ${total}`
+            : `Mostrando tus cartones ${inicio} al ${fin} de ${total}`);
+
+      let html = `
+        <button class="btn-pagina" onclick="cambiarPaginaCartones(${paginaActualCartones - 1})" ${paginaActualCartones === 1 ? 'disabled' : ''}>◀ Anterior</button>
+      `;
+
+      for (let pagina = 1; pagina <= totalPaginas; pagina++) {
+        html += `<button class="page-chip ${pagina === paginaActualCartones ? 'active' : ''}" onclick="cambiarPaginaCartones(${pagina})">${pagina}</button>`;
+      }
+
+      html += `
+        <button class="btn-pagina" onclick="cambiarPaginaCartones(${paginaActualCartones + 1})" ${paginaActualCartones === totalPaginas ? 'disabled' : ''}>Siguiente ▶</button>
+      `;
+
+      paginacion.innerHTML = html;
+    }
+
+    function cambiarPaginaCartones(pagina) {
+      const totalPaginas = Math.max(1, Math.ceil(cartonesComprados.length / CARTONES_POR_PAGINA));
+      if (pagina < 1 || pagina > totalPaginas || pagina === paginaActualCartones) return;
+      paginaActualCartones = pagina;
+      renderizarPaginaCartones();
+      window.scrollTo({ top: document.getElementById('cartonesContainer').offsetTop - 80, behavior: 'smooth' });
     }
 
     function generarCartonDesdeNumero(numeroCarton) {
@@ -817,7 +1088,20 @@
         )
         .subscribe();
 
-      suscripciones.push(gameSub, ballSub);
+      const vendidosSub = supabaseClient
+        .channel('bingo-vendidos-' + Date.now())
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'cartones_vendidos' },
+          async () => {
+            await cargarCartonesEnSala();
+            if (modoVistaCartones === 'todos') {
+              renderizarPaginaCartones();
+            }
+          }
+        )
+        .subscribe();
+
+      suscripciones.push(gameSub, ballSub, vendidosSub);
     }
 
     async function verificarEstadoActual() {
@@ -831,6 +1115,8 @@
 
         if (error) throw error;
         if (!data) return;
+
+        await cargarCartonesEnSala();
 
         gameId = data.id;
         manejarCambioJuego(data);
@@ -938,7 +1224,7 @@
       agregarAlHistorial(bola.numero, letra);
       bolasCantadas.push(bola.numero);
 
-      cartonesComprados.forEach(numCarton => {
+      obtenerUniversoCartones().forEach(numCarton => {
         marcarNumeroEnCarton(numCarton, bola.numero);
       });
     }
@@ -965,6 +1251,7 @@
       const celdas = document.querySelectorAll(`[data-carton="${numeroCarton}"][data-numero="${numero}"]`);
       if (celdas.length === 0) return;
 
+      asegurarTrackingCarton(numeroCarton);
       let fueMarcado = false;
 
       celdas.forEach(celda => {
@@ -979,12 +1266,15 @@
 
       if (fueMarcado) {
         actualizarProgreso(numeroCarton);
-        verificarCartonLleno(numeroCarton);
+        if (cartonesComprados.includes(numeroCarton)) {
+          verificarCartonLleno(numeroCarton);
+        }
       }
     }
 
     function marcarNumeroSilencioso(numero) {
-      cartonesComprados.forEach(numCarton => {
+      obtenerUniversoCartones().forEach(numCarton => {
+        asegurarTrackingCarton(numCarton);
         const celdas = document.querySelectorAll(`[data-carton="${numCarton}"][data-numero="${numero}"]`);
         celdas.forEach(celda => {
           if (!celda.classList.contains('marcado')) {
@@ -1005,6 +1295,8 @@
       const barra = document.getElementById(`barra-${numeroCarton}`);
       const estado = document.getElementById(`estado-${numeroCarton}`);
       const cartonSection = document.getElementById(`carton-${numeroCarton}`);
+
+      if (!barra || !estado || !cartonSection) return;
 
       barra.style.width = porcentaje + '%';
       barra.textContent = `${marcados}/${total}`;
