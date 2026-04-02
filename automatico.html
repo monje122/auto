@@ -549,6 +549,86 @@
       border-color: transparent;
     }
 
+
+    .premios-box {
+      background: rgba(0,0,0,0.28);
+      border: 2px solid rgba(255,165,0,0.3);
+      border-radius: 22px;
+      padding: 24px;
+      margin: 25px 0 30px;
+    }
+
+    .premios-box h3 {
+      color: var(--secondary);
+      font-family: 'Orbitron', sans-serif;
+      margin-bottom: 18px;
+      text-align: center;
+    }
+
+    .premios-topline {
+      text-align: center;
+      color: rgba(255,255,255,0.75);
+      margin-bottom: 18px;
+      font-size: 0.98em;
+    }
+
+    .premios-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .premio-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,165,0,0.18);
+      border-radius: 18px;
+      padding: 18px;
+      text-align: center;
+    }
+
+    .premio-label {
+      color: rgba(255,255,255,0.62);
+      font-size: 0.85em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      letter-spacing: 0.8px;
+    }
+
+    .premio-value {
+      color: white;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 1.45em;
+      line-height: 1.2;
+    }
+
+    .premios-distribucion {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+    }
+
+    .premio-subcard {
+      background: rgba(255,165,0,0.08);
+      border-radius: 16px;
+      padding: 16px 18px;
+      border-left: 4px solid var(--primary);
+    }
+
+    .premio-subcard strong {
+      display: block;
+      color: var(--secondary);
+      margin-bottom: 6px;
+      font-size: 1.02em;
+    }
+
+    .premio-subcard span {
+      display: block;
+      color: rgba(255,255,255,0.9);
+      font-size: 1.12em;
+      font-weight: bold;
+    }
+
     @media (max-width: 768px) {
       .header h1 { font-size: 1.8em; }
       .bola-actual { width: 120px; height: 120px; font-size: 3em; }
@@ -600,6 +680,36 @@
       <div class="info-item">
         <strong>TUS CARTONES</strong>
         <span id="infoCartones" style="color: var(--primary); font-weight: bold;">--</span>
+      </div>
+    </div>
+
+    <div class="premios-box">
+      <h3>💰 Información en tiempo real del premio</h3>
+      <div class="premios-topline" id="premiosTopline">Cartones aprobados en juego: 0</div>
+      <div class="premios-grid">
+        <div class="premio-card">
+          <div class="premio-label">Total recaudado</div>
+          <div class="premio-value" id="premioRecaudado">0.00 Bs</div>
+        </div>
+        <div class="premio-card">
+          <div class="premio-label">Dinero a repartir (70%)</div>
+          <div class="premio-value" id="premioPool">0.00 Bs</div>
+        </div>
+       
+      </div>
+      <div class="premios-distribucion">
+        <div class="premio-subcard">
+          <strong>🏆 Premio cartón lleno (60% del pote)</strong>
+          <span id="premioLleno">0.00 Bs</span>
+        </div>
+        <div class="premio-subcard">
+          <strong>➡️ Premio por fila (20% del pote)</strong>
+          <span id="premioFila">0.00 Bs</span>
+        </div>
+        <div class="premio-subcard">
+          <strong>⬇️ Premio por columna (20% del pote)</strong>
+          <span id="premioColumna">0.00 Bs</span>
+        </div>
       </div>
     </div>
 
@@ -674,6 +784,7 @@
     const CARTONES_POR_PAGINA = 10;
     let modoVistaCartones = 'mios';
     let cartonesEnSala = [];
+    let resumenPremios = { recaudado: 0, pool: 0, admin: 0, lleno: 0, fila: 0, columna: 0 };
 
     const RANGOS = {
       B: [1, 15], I: [16, 30], N: [31, 45], G: [46, 60], O: [61, 75]
@@ -744,6 +855,47 @@
       return Array.from(universo);
     }
 
+    function formatearBs(valor) {
+      return `${Number(valor || 0).toFixed(2)} Bs`;
+    }
+
+    function actualizarResumenPremiosUI() {
+      document.getElementById('premiosTopline').textContent = `Cartones aprobados en juego: ${cartonesEnSala.length}`;
+      document.getElementById('premioRecaudado').textContent = formatearBs(resumenPremios.recaudado);
+      document.getElementById('premioPool').textContent = formatearBs(resumenPremios.pool);
+      
+      document.getElementById('premioLleno').textContent = formatearBs(resumenPremios.lleno);
+      document.getElementById('premioFila').textContent = formatearBs(resumenPremios.fila);
+      document.getElementById('premioColumna').textContent = formatearBs(resumenPremios.columna);
+    }
+
+    async function cargarResumenPremios() {
+      const { data, error } = await supabaseClient
+        .from('apartados_temp')
+        .select('precio_total')
+        .eq('estado', 'aprobado');
+
+      if (error) {
+        console.error('❌ Error cargando resumen de premios:', error);
+        return;
+      }
+
+      const recaudado = (data || []).reduce((acc, item) => acc + (parseFloat(item.precio_total) || 0), 0);
+      const pool = recaudado * 0.70;
+     
+
+      resumenPremios = {
+        recaudado,
+        pool,
+
+        lleno: pool * 0.60,
+        fila: pool * 0.20,
+        columna: pool * 0.20
+      };
+
+      actualizarResumenPremiosUI();
+    }
+
     async function cargarCartonesEnSala() {
       const { data, error } = await supabaseClient
         .from('cartones_vendidos')
@@ -762,6 +914,7 @@
       }));
 
       cartonesEnSala.forEach(item => asegurarTrackingCarton(item.numero_carton));
+      actualizarResumenPremiosUI();
     }
 
     async function cambiarModoVista(modo) {
@@ -839,7 +992,7 @@
           numerosMarcadosPorCarton[num] = new Set(['LIBRE']);
         });
 
-        await cargarCartonesEnSala();
+        await Promise.all([cargarCartonesEnSala(), cargarResumenPremios()]);
 
         sessionStorage.setItem('modoJuego', 'solo-comprados');
         sessionStorage.setItem('cedulaComprador', datosJugador.cedula);
@@ -874,6 +1027,7 @@
       document.getElementById('estadoJuego').textContent = '⏳ ESPERANDO INICIO...';
       document.getElementById('errorBanner').classList.remove('active');
       document.querySelectorAll('.mensaje-final-juego').forEach(el => el.remove());
+      actualizarResumenPremiosUI();
     }
 
     function abrirJuego() {
@@ -893,6 +1047,7 @@
       document.getElementById('subtitulo').textContent =
         `Tienes ${cartonesComprados.length} cartón(es) en juego`;
 
+      actualizarResumenPremiosUI();
       modoVistaCartones = 'mios';
       document.getElementById('btnVistaMios').classList.add('active');
       document.getElementById('btnVistaTodos').classList.remove('active');
@@ -1000,7 +1155,7 @@
     }
 
     function cambiarPaginaCartones(pagina) {
-      const totalPaginas = Math.max(1, Math.ceil(cartonesComprados.length / CARTONES_POR_PAGINA));
+      const totalPaginas = Math.max(1, Math.ceil(obtenerCartonesVisibles().length / CARTONES_POR_PAGINA));
       if (pagina < 1 || pagina > totalPaginas || pagina === paginaActualCartones) return;
       paginaActualCartones = pagina;
       renderizarPaginaCartones();
@@ -1101,7 +1256,17 @@
         )
         .subscribe();
 
-      suscripciones.push(gameSub, ballSub, vendidosSub);
+      const comprasSub = supabaseClient
+        .channel('bingo-compras-' + Date.now())
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'apartados_temp' },
+          async () => {
+            await cargarResumenPremios();
+          }
+        )
+        .subscribe();
+
+      suscripciones.push(gameSub, ballSub, vendidosSub, comprasSub);
     }
 
     async function verificarEstadoActual() {
@@ -1116,7 +1281,7 @@
         if (error) throw error;
         if (!data) return;
 
-        await cargarCartonesEnSala();
+        await Promise.all([cargarCartonesEnSala(), cargarResumenPremios()]);
 
         gameId = data.id;
         manejarCambioJuego(data);
