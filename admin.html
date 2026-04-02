@@ -511,6 +511,10 @@
             <div class="stat-label">Individuales Aprobados</div>
             <div class="stat-value" id="montoIndividualAprobado" style="font-size: 1.7em;">0.00 Bs</div>
           </div>
+          <div class="stat-card">
+  <div class="stat-label">Ganancia Admin (30%)</div>
+  <div class="stat-value" id="gananciaAdmin" style="font-size: 1.7em;">0.00 Bs</div>
+</div>
         </div>
 
         <div class="control-panel">
@@ -1162,10 +1166,12 @@
         if (item.promocion_id !== null && item.promocion_id !== undefined) promos += monto;
         else individuales += monto;
       });
+      const gananciaAdmin = total * 0.30;
 
       document.getElementById('montoTotalAprobado').textContent = formatearBs(total);
       document.getElementById('montoPromosAprobado').textContent = formatearBs(promos);
       document.getElementById('montoIndividualAprobado').textContent = formatearBs(individuales);
+       document.getElementById('gananciaAdmin').textContent = formatearBs(gananciaAdmin);
     }
 
     function getLetter(num) {
