@@ -687,24 +687,24 @@
       <h3>💰 Información en tiempo real del premio</h3>
       <div class="premios-topline" id="premiosTopline">Cartones aprobados en juego: 0</div>
       <div class="premios-grid">
-       
+        
         <div class="premio-card">
-          <div class="premio-label">Dinero a repartir (70%)</div>
+          <div class="premio-label">Dinero a repartir </div>
           <div class="premio-value" id="premioPool">0.00 Bs</div>
         </div>
        
       </div>
       <div class="premios-distribucion">
         <div class="premio-subcard">
-          <strong>🏆 Premio cartón lleno (60% del pote)</strong>
+          <strong>🏆 Premio cartón lleno </strong>
           <span id="premioLleno">0.00 Bs</span>
         </div>
         <div class="premio-subcard">
-          <strong>➡️ Premio por fila (20% del pote)</strong>
+          <strong>➡️ Premio por fila </strong>
           <span id="premioFila">0.00 Bs</span>
         </div>
         <div class="premio-subcard">
-          <strong>⬇️ Premio por columna (20% del pote)</strong>
+          <strong>⬇️ Premio por columna </strong>
           <span id="premioColumna">0.00 Bs</span>
         </div>
       </div>
@@ -753,7 +753,7 @@
       <p style="color: #000; font-size: 1.2em; margin-bottom: 30px;">
         ¡Cartón completo! Has ganado el premio.
       </p>
-      <button onclick="cerrarModal()" style="background: #000; color: white; border: none; padding: 15px 40px; border-radius: 30px; font-size: 1.1em; cursor: pointer;">
+      <button id="modalCloseBtn" onclick="cerrarModal()" style="background: #000; color: white; border: none; padding: 15px 40px; border-radius: 30px; font-size: 1.1em; cursor: pointer;">
         ACEPTAR
       </button>
     </div>
@@ -782,6 +782,8 @@
     let modoVistaCartones = 'mios';
     let cartonesEnSala = [];
     let resumenPremios = { recaudado: 0, pool: 0, admin: 0, lleno: 0, fila: 0, columna: 0 };
+    let premioTemporalActivo = false;
+    let premiosMostrados = { fila: null, columna: null, lleno: null };
 
     const RANGOS = {
       B: [1, 15], I: [16, 30], N: [31, 45], G: [46, 60], O: [61, 75]
@@ -867,36 +869,31 @@
     }
 
     async function cargarResumenPremios() {
-  const { data, error } = await supabaseClient
-    .from('apartados_temp')
-    .select('precio_total')
-    .eq('estado', 'aprobado');
+      const { data, error } = await supabaseClient
+        .from('apartados_temp')
+        .select('precio_total')
+        .eq('estado', 'aprobado');
 
-  if (error) {
-    console.error('❌ Error cargando resumen de premios:', error);
-    return;
-  }
+      if (error) {
+        console.error('❌ Error cargando resumen de premios:', error);
+        return;
+      }
 
-  // 🔥 SUMAR TODO LO RECAUDADO
-  let total = 0;
+      const recaudado = (data || []).reduce((acc, item) => acc + (parseFloat(item.precio_total) || 0), 0);
+      const pool = recaudado * 0.70;
+     
 
-  (data || []).forEach(item => {
-    total += parseFloat(item.precio_total) || 0;
-  });
+      resumenPremios = {
+        recaudado,
+        pool,
 
-  // 🔥 CALCULAR POZO (70%)
-  const pool = total * 0.70;
+        lleno: pool * 0.60,
+        fila: pool * 0.20,
+        columna: pool * 0.20
+      };
 
-  // 🔥 DISTRIBUCIÓN
-  resumenPremios = {
-    pool,
-    lleno: pool * 0.60,
-    fila: pool * 0.20,
-    columna: pool * 0.20
-  };
-
-  actualizarResumenPremiosUI();
-}
+      actualizarResumenPremiosUI();
+    }
 
     async function cargarCartonesEnSala() {
       const { data, error } = await supabaseClient
@@ -1014,6 +1011,8 @@
       bolasProcesadas = new Set();
       gameId = null;
       isDeclarandoGanador = false;
+      premioTemporalActivo = false;
+      premiosMostrados = { fila: null, columna: null, lleno: null };
 
       const historial = document.getElementById('historialBolas');
       historial.innerHTML = `
@@ -1221,6 +1220,209 @@
       }
     }
 
+
+    function obtenerInfoCarton(numeroCarton) {
+      const numero = Number(numeroCarton);
+      const encontrado = cartonesEnSala.find(item => Number(item.numero_carton) === numero);
+
+      if (encontrado) {
+        return {
+          numero_carton: numero,
+          nombre: encontrado.nombre || 'Jugador',
+          cedula: encontrado.cedula || '',
+          esMio: esCedulaDelJugador(encontrado.cedula)
+        };
+      }
+
+      return {
+        numero_carton: numero,
+        nombre: datosJugador.nombre || 'Jugador',
+        cedula: datosJugador.cedula || '',
+        esMio: cartonesComprados.includes(numero)
+      };
+    }
+
+    function obtenerMatrizCarton(numeroCarton) {
+      const carton = generarCartonDesdeNumero(numeroCarton);
+      const letras = ['B', 'I', 'N', 'G', 'O'];
+      const matriz = [];
+
+      for (let fila = 0; fila < 5; fila++) {
+        const row = [];
+        for (let col = 0; col < 5; col++) {
+          const letra = letras[col];
+
+          if (letra === 'N' && fila === 2) {
+            row.push('LIBRE');
+          } else {
+            const idx = (letra === 'N' && fila > 2) ? fila - 1 : fila;
+            row.push(carton[letra][idx]);
+          }
+        }
+        matriz.push(row);
+      }
+
+      return matriz;
+    }
+
+    function tieneFilaCompleta(numeroCarton) {
+      const matriz = obtenerMatrizCarton(numeroCarton);
+      const marcados = numerosMarcadosPorCarton[numeroCarton] || new Set(['LIBRE']);
+
+      for (let fila = 0; fila < 5; fila++) {
+        let completa = true;
+        for (let col = 0; col < 5; col++) {
+          const valor = matriz[fila][col];
+          if (valor !== 'LIBRE' && !marcados.has(valor)) {
+            completa = false;
+            break;
+          }
+        }
+        if (completa) return true;
+      }
+
+      return false;
+    }
+
+    function tieneColumnaCompleta(numeroCarton) {
+      const matriz = obtenerMatrizCarton(numeroCarton);
+      const marcados = numerosMarcadosPorCarton[numeroCarton] || new Set(['LIBRE']);
+
+      for (let col = 0; col < 5; col++) {
+        let completa = true;
+        for (let fila = 0; fila < 5; fila++) {
+          const valor = matriz[fila][col];
+          if (valor !== 'LIBRE' && !marcados.has(valor)) {
+            completa = false;
+            break;
+          }
+        }
+        if (completa) return true;
+      }
+
+      return false;
+    }
+
+    async function mostrarPremioTemporal(titulo, subtitulo) {
+      if (premioTemporalActivo) return;
+
+      premioTemporalActivo = true;
+
+      const modal = document.getElementById('modalGanador');
+      const botonCerrar = document.getElementById('modalCloseBtn');
+
+      document.querySelector('#modalGanador h1').textContent = titulo;
+      document.getElementById('ganadorTexto').textContent = subtitulo;
+      if (botonCerrar) botonCerrar.style.display = 'none';
+      modal.classList.add('activo');
+
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      modal.classList.remove('activo');
+      if (botonCerrar) botonCerrar.style.display = 'inline-block';
+      document.querySelector('#modalGanador h1').textContent = '🎉 ¡BINGO! 🎉';
+      premioTemporalActivo = false;
+    }
+
+    async function verificarPremiosSecuenciales(numeroCarton) {
+  if (!gameId || premioTemporalActivo) return;
+
+  try {
+    const info = obtenerInfoCarton(numeroCarton);
+
+    const { data: juego, error } = await supabaseClient
+      .from('bingo_automatico')
+      .select(`
+        id,
+        estado,
+        ganador_id,
+        premio_fila_pagado,
+        premio_fila_ganador_id,
+        premio_columna_pagado,
+        premio_columna_ganador_id
+      `)
+      .eq('id', gameId)
+      .single();
+
+    if (error || !juego || juego.estado !== 'jugando' || juego.ganador_id) return;
+
+    const filaCompleta = tieneFilaCompleta(numeroCarton);
+    const columnaCompleta = tieneColumnaCompleta(numeroCarton);
+
+    // 1) Si aún no se ha pagado fila y ESTE cartón hizo fila, pagar fila
+    if (!juego.premio_fila_pagado && filaCompleta) {
+      const { data: actualizado, error: updateError } = await supabaseClient
+        .from('bingo_automatico')
+        .update({
+          premio_fila_pagado: true,
+          premio_fila_ganador_id: Number(numeroCarton),
+          premio_fila_ganador_nombre: `${info.nombre} (Cartón #${numeroCarton})`
+        })
+        .eq('id', gameId)
+        .eq('premio_fila_pagado', false)
+        .is('ganador_id', null)
+        .select();
+
+      if (!updateError && actualizado && actualizado.length > 0) {
+        await mostrarPremioTemporal(
+          '🎉 ¡PREMIO POR FILA!',
+          `${info.nombre} ganó con el cartón #${numeroCarton}`
+        );
+      }
+
+      return;
+    }
+
+    // 2) Si aún no se ha pagado columna y ESTE cartón hizo columna, pagar columna
+    if (!juego.premio_columna_pagado && columnaCompleta) {
+      const { data: actualizado, error: updateError } = await supabaseClient
+        .from('bingo_automatico')
+        .update({
+          premio_columna_pagado: true,
+          premio_columna_ganador_id: Number(numeroCarton),
+          premio_columna_ganador_nombre: `${info.nombre} (Cartón #${numeroCarton})`
+        })
+        .eq('id', gameId)
+        .eq('premio_columna_pagado', false)
+        .is('ganador_id', null)
+        .select();
+
+      if (!updateError && actualizado && actualizado.length > 0) {
+        await mostrarPremioTemporal(
+          '🎉 ¡PREMIO POR COLUMNA!',
+          `${info.nombre} ganó con el cartón #${numeroCarton}`
+        );
+      }
+
+      return;
+    }
+
+    // 3) Solo cuando ya existan ambos premios intermedios, permitir lleno
+    if (juego.premio_fila_pagado && juego.premio_columna_pagado) {
+      await verificarCartonLleno(numeroCarton);
+    }
+  } catch (error) {
+    console.error('❌ Error verificando premios secuenciales:', error);
+  }
+}
+
+    async function mostrarPremiosPreviosSiCorresponde(juego, juegoAnterior = null) {
+      if (!juego) return;
+
+      const filaCambio = juego.premio_fila_pagado && premiosMostrados.fila !== juego.premio_fila_ganador_id;
+      if (filaCambio) {
+        premiosMostrados.fila = juego.premio_fila_ganador_id;
+        await mostrarPremioTemporal('🎉 ¡PREMIO POR FILA!', juego.premio_fila_ganador_nombre || `Cartón #${juego.premio_fila_ganador_id}`);
+      }
+
+      const columnaCambio = juego.premio_columna_pagado && premiosMostrados.columna !== juego.premio_columna_ganador_id;
+      if (columnaCambio) {
+        premiosMostrados.columna = juego.premio_columna_ganador_id;
+        await mostrarPremioTemporal('🎉 ¡PREMIO POR COLUMNA!', juego.premio_columna_ganador_nombre || `Cartón #${juego.premio_columna_ganador_id}`);
+      }
+    }
+
+
     function iniciarSuscripciones() {
       suscripciones.forEach(s => s.unsubscribe());
       suscripciones = [];
@@ -1230,7 +1432,7 @@
         .on('postgres_changes',
           { event: '*', schema: 'public', table: 'bingo_automatico' },
           (payload) => {
-            manejarCambioJuego(payload.new);
+            manejarCambioJuego(payload.new, payload.old || null);
           }
         )
         .subscribe();
@@ -1286,7 +1488,7 @@
         await Promise.all([cargarCartonesEnSala(), cargarResumenPremios()]);
 
         gameId = data.id;
-        manejarCambioJuego(data);
+        await manejarCambioJuego(data, null);
 
         if (data.estado === 'jugando') {
           await cargarBolasAnteriores(data.id);
@@ -1328,7 +1530,7 @@
       }
     }
 
-    function manejarCambioJuego(juego) {
+    async function manejarCambioJuego(juego, juegoAnterior = null) {
       if (!juego) return;
 
       const estadoEl = document.getElementById('estadoJuego');
@@ -1336,6 +1538,7 @@
       const esperando = document.getElementById('esperandoMensaje');
 
       gameId = juego.id;
+      await mostrarPremiosPreviosSiCorresponde(juego, juegoAnterior);
 
       switch (juego.estado) {
         case 'esperando':
@@ -1415,29 +1618,30 @@
     }
 
     function marcarNumeroEnCarton(numeroCarton, numero) {
-      const celdas = document.querySelectorAll(`[data-carton="${numeroCarton}"][data-numero="${numero}"]`);
-      if (celdas.length === 0) return;
+  asegurarTrackingCarton(numeroCarton);
 
-      asegurarTrackingCarton(numeroCarton);
-      let fueMarcado = false;
+  const yaMarcado = numerosMarcadosPorCarton[numeroCarton].has(numero);
+  if (!yaMarcado) {
+    numerosMarcadosPorCarton[numeroCarton].add(numero);
+  }
 
-      celdas.forEach(celda => {
-        if (!celda.classList.contains('marcado')) {
-          celda.classList.add('marcado');
-          numerosMarcadosPorCarton[numeroCarton].add(numero);
-          fueMarcado = true;
-          celda.style.animation = 'none';
-          setTimeout(() => celda.style.animation = 'markCell 0.5s ease', 10);
-        }
-      });
+  const celdas = document.querySelectorAll(
+    `[data-carton="${numeroCarton}"][data-numero="${numero}"]`
+  );
 
-      if (fueMarcado) {
-        actualizarProgreso(numeroCarton);
-        if (cartonesComprados.includes(numeroCarton)) {
-          verificarCartonLleno(numeroCarton);
-        }
-      }
+  celdas.forEach(celda => {
+    if (!celda.classList.contains('marcado')) {
+      celda.classList.add('marcado');
+      celda.style.animation = 'none';
+      setTimeout(() => celda.style.animation = 'markCell 0.5s ease', 10);
     }
+  });
+
+  if (!yaMarcado) {
+    actualizarProgreso(numeroCarton);
+    verificarPremiosSecuenciales(numeroCarton);
+  }
+}
 
     function marcarNumeroSilencioso(numero) {
       obtenerUniversoCartones().forEach(numCarton => {
@@ -1494,11 +1698,11 @@
       try {
         const { data: juego, error } = await supabaseClient
           .from('bingo_automatico')
-          .select('estado, ganador_id')
+          .select('estado, ganador_id, premio_fila_pagado, premio_columna_pagado')
           .eq('id', gameId)
           .single();
 
-        if (error || !juego || juego.ganador_id) {
+        if (error || !juego || juego.ganador_id || !juego.premio_fila_pagado || !juego.premio_columna_pagado) {
           isDeclarandoGanador = false;
           return;
         }
@@ -1529,7 +1733,11 @@
 
     function mostrarGanador(numeroCarton) {
       const modal = document.getElementById('modalGanador');
+      const botonCerrar = document.getElementById('modalCloseBtn');
+      premiosMostrados.lleno = Number(numeroCarton);
+      document.querySelector('#modalGanador h1').textContent = '🎉 ¡BINGO! 🎉';
       document.getElementById('ganadorTexto').textContent = `¡Cartón #${numeroCarton} completo!`;
+      if (botonCerrar) botonCerrar.style.display = 'inline-block';
       modal.classList.add('activo');
       crearConfeti();
     }
@@ -1590,6 +1798,9 @@
 
     function cerrarModal() {
       document.getElementById('modalGanador').classList.remove('activo');
+      const botonCerrar = document.getElementById('modalCloseBtn');
+      if (botonCerrar) botonCerrar.style.display = 'inline-block';
+      document.querySelector('#modalGanador h1').textContent = '🎉 ¡BINGO! 🎉';
     }
 
     function mostrarError(mensaje) {
