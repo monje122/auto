@@ -687,10 +687,7 @@
       <h3>💰 Información en tiempo real del premio</h3>
       <div class="premios-topline" id="premiosTopline">Cartones aprobados en juego: 0</div>
       <div class="premios-grid">
-        <div class="premio-card">
-          <div class="premio-label">Total recaudado</div>
-          <div class="premio-value" id="premioRecaudado">0.00 Bs</div>
-        </div>
+       
         <div class="premio-card">
           <div class="premio-label">Dinero a repartir (70%)</div>
           <div class="premio-value" id="premioPool">0.00 Bs</div>
@@ -861,7 +858,7 @@
 
     function actualizarResumenPremiosUI() {
       document.getElementById('premiosTopline').textContent = `Cartones aprobados en juego: ${cartonesEnSala.length}`;
-      document.getElementById('premioRecaudado').textContent = formatearBs(resumenPremios.recaudado);
+      
       document.getElementById('premioPool').textContent = formatearBs(resumenPremios.pool);
       
       document.getElementById('premioLleno').textContent = formatearBs(resumenPremios.lleno);
@@ -870,31 +867,36 @@
     }
 
     async function cargarResumenPremios() {
-      const { data, error } = await supabaseClient
-        .from('apartados_temp')
-        .select('precio_total')
-        .eq('estado', 'aprobado');
+  const { data, error } = await supabaseClient
+    .from('apartados_temp')
+    .select('precio_total')
+    .eq('estado', 'aprobado');
 
-      if (error) {
-        console.error('❌ Error cargando resumen de premios:', error);
-        return;
-      }
+  if (error) {
+    console.error('❌ Error cargando resumen de premios:', error);
+    return;
+  }
 
-      const recaudado = (data || []).reduce((acc, item) => acc + (parseFloat(item.precio_total) || 0), 0);
-      const pool = recaudado * 0.70;
-     
+  // 🔥 SUMAR TODO LO RECAUDADO
+  let total = 0;
 
-      resumenPremios = {
-        recaudado,
-        pool,
+  (data || []).forEach(item => {
+    total += parseFloat(item.precio_total) || 0;
+  });
 
-        lleno: pool * 0.60,
-        fila: pool * 0.20,
-        columna: pool * 0.20
-      };
+  // 🔥 CALCULAR POZO (70%)
+  const pool = total * 0.70;
 
-      actualizarResumenPremiosUI();
-    }
+  // 🔥 DISTRIBUCIÓN
+  resumenPremios = {
+    pool,
+    lleno: pool * 0.60,
+    fila: pool * 0.20,
+    columna: pool * 0.20
+  };
+
+  actualizarResumenPremiosUI();
+}
 
     async function cargarCartonesEnSala() {
       const { data, error } = await supabaseClient
