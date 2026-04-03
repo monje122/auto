@@ -453,6 +453,9 @@
         <div class="nav-item active" onclick="showSection('auto', this)">
           <span>🎮</span> Control Juego
         </div>
+        <div class="nav-item" onclick="showSection('historial', this)">
+  <span>🏆</span> Historial Ganadores
+</div>
         <div class="nav-item" onclick="showSection('ventas', this)">
           <span>🛒</span> Compras Pendientes
         </div>
@@ -552,14 +555,44 @@
               El juego no ha iniciado
             </div>
           </div>
+<div id="winnerFila" class="winner-display">
+  <h2>🟡 ¡GANADOR POR FILA! 🟡</h2>
+  <p id="winnerFilaInfo" style="font-size: 1.3em; margin-top: 10px;"></p>
+</div>
 
+<div id="winnerColumna" class="winner-display">
+  <h2>🔵 ¡GANADOR POR COLUMNA! 🔵</h2>
+  <p id="winnerColumnaInfo" style="font-size: 1.3em; margin-top: 10px;"></p>
+</div>
           <div id="winnerDisplay" class="winner-display">
             <h2>🏆 ¡GANADOR! 🏆</h2>
             <p id="winnerInfo" style="font-size: 1.3em; margin-top: 10px;"></p>
           </div>
         </div>
       </div>
-
+<!-- SECCIÓN: historial de ganadores -->
+      <div id="sec-historial" class="section">
+  <h2 class="section-title">🏆 Historial de Ganadores del Día</h2>
+  <div class="data-table">
+    <table style="width: 100%;">
+      <thead>
+        <tr>
+          <th>Hora</th>
+          <th>Premio</th>
+          <th>Ganador</th>
+          <th>Cédula</th>
+          <th>Teléfono</th>
+          <th>Cartón</th>
+        </tr>
+      </thead>
+      <tbody id="tablaHistorialGanadores">
+        <tr>
+          <td colspan="6" style="text-align:center; padding:40px;">Cargando...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
       <!-- SECCIÓN: COMPRAS PENDIENTES -->
       <div id="sec-ventas" class="section">
         <h2 class="section-title">🛒 Compras</h2>
@@ -707,12 +740,14 @@
       const titulos = {
         auto: 'Control del Bingo Automático',
         ventas: 'Compras',
+        historial: 'Historial de Ganadores',
         promos: 'Gestión de Promociones',
         config: 'Ajustes'
       };
       document.getElementById('pageTitle').textContent = titulos[section] || 'Panel Admin';
 
       if (section === 'ventas') cargarVentas();
+      if (section === 'historial') cargarHistorialGanadores();
       if (section === 'promos') cargarPromociones();
       if (section === 'config') cargarAjustes();
     }
@@ -726,36 +761,109 @@
       ]);
       setupSubscriptions();
     }
+async function cargarHistorialGanadores() {
+  const tbody = document.getElementById('tablaHistorialGanadores');
+  if (!tbody) return;
 
-    async function checkCurrentGame() {
-      const { data, error } = await supabaseClient
-        .from('bingo_automatico')
-        .select('*')
-        .order('id', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+  const hoy = new Date();
+  const yyyy = hoy.getFullYear();
+  const mm = String(hoy.getMonth() + 1).padStart(2, '0');
+  const dd = String(hoy.getDate()).padStart(2, '0');
+  const fechaHoy = `${yyyy}-${mm}-${dd}`;
 
-      if (error) {
-        console.error('Error verificando juego actual:', error);
-        return;
-      }
+  const { data, error } = await supabaseClient
+    .from('historial_ganadores')
+    .select('*')
+    .eq('fecha', fechaHoy)
+    .order('creado_en', { ascending: false });
 
-      currentGame = data || null;
-      updateAutoUI(currentGame);
+  if (error) {
+    console.error('Error cargando historial de ganadores:', error);
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align:center; padding:40px;">
+          Error cargando historial
+        </td>
+      </tr>
+    `;
+    return;
+  }
 
-      if (currentGame?.estado === 'jugando') {
-        await loadAvailableBalls(currentGame.id);
-        startGameTimer(new Date(currentGame.iniciado_en));
-        await updateBallCount();
-      } else {
-        document.getElementById('autoBalls').textContent = '0';
-      }
+  if (!data || data.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align:center; padding:40px;">
+          No hay ganadores registrados hoy
+        </td>
+      </tr>
+    `;
+    return;
+  }
 
-      if (currentGame?.ganador_id) {
-        showWinner(currentGame.ganador_nombre || `Cartón #${currentGame.ganador_id}`);
-      }
-    }
+  tbody.innerHTML = data.map(item => {
+    const hora = item.creado_en
+      ? new Date(item.creado_en).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : '--:--';
 
+    const premio = item.tipo_premio === 'fila'
+      ? '🟡 Fila'
+      : item.tipo_premio === 'columna'
+      ? '🔵 Columna'
+      : '🏆 Cartón lleno';
+
+    return `
+      <tr>
+        <td>${hora}</td>
+        <td>${premio}</td>
+        <td>${item.nombre || '-'}</td>
+        <td>${item.cedula || '-'}</td>
+        <td>${item.telefono || '-'}</td>
+        <td>#${String(item.numero_carton || 0).padStart(4, '0')}</td>
+      </tr>
+    `;
+  }).join('');
+}
+  async function checkCurrentGame() {
+  const { data, error } = await supabaseClient
+    .from('bingo_automatico')
+    .select('*')
+    .order('id', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error verificando juego actual:', error);
+    return;
+  }
+
+  currentGame = data || null;
+  updateAutoUI(currentGame);
+
+  if (currentGame?.estado === 'jugando') {
+    await loadAvailableBalls(currentGame.id);
+    startGameTimer(new Date(currentGame.iniciado_en));
+    await updateBallCount();
+  } else {
+    document.getElementById('autoBalls').textContent = '0';
+  }
+
+  // Recuperar premios ya existentes
+  if (currentGame?.premio_fila_ganador_nombre) {
+    showWinnerFila(currentGame.premio_fila_ganador_nombre);
+  }
+
+  if (currentGame?.premio_columna_ganador_nombre) {
+    setTimeout(() => {
+      showWinnerColumna(currentGame.premio_columna_ganador_nombre);
+    }, currentGame?.premio_fila_ganador_nombre ? 5200 : 0);
+  }
+
+  if (currentGame?.ganador_id) {
+    setTimeout(() => {
+      showWinner(currentGame.ganador_nombre || `Cartón #${currentGame.ganador_id}`);
+    }, currentGame?.premio_fila_ganador_nombre || currentGame?.premio_columna_ganador_nombre ? 10400 : 0);
+  }
+}
     async function loadAvailableBalls(gameId) {
       const { data: bolas, error } = await supabaseClient
         .from('bolas_auto')
@@ -772,6 +880,48 @@
         Array.from({ length: 75 }, (_, i) => i + 1).filter(n => !sorteadas.has(n))
       );
     }
+    let colaGanadores = [];
+let mostrando = false;
+
+function mostrarSecuencial(func, nombre) {
+  colaGanadores.push({ func, nombre });
+  procesarCola();
+}
+
+function procesarCola() {
+  if (mostrando || colaGanadores.length === 0) return;
+
+  mostrando = true;
+  const { func, nombre } = colaGanadores.shift();
+
+  func(nombre);
+
+  setTimeout(() => {
+    mostrando = false;
+    procesarCola();
+  }, 5000);
+}
+ function showWinnerFila(info) {
+  const div = document.getElementById('winnerFila');
+  document.getElementById('winnerFilaInfo').textContent = info;
+
+  div.classList.add('active');
+
+  setTimeout(() => {
+    div.classList.remove('active');
+  }, 5000);
+}
+
+function showWinnerColumna(info) {
+  const div = document.getElementById('winnerColumna');
+  document.getElementById('winnerColumnaInfo').textContent = info;
+
+  div.classList.add('active');
+
+  setTimeout(() => {
+    div.classList.remove('active');
+  }, 5000);
+}
 
     function setupSubscriptions() {
       supabaseClient
@@ -794,12 +944,35 @@
               document.getElementById('btnAutoMode').textContent = '🤖 Auto: OFF';
             }
 
-            if (payload.new?.ganador_id && !payload.old?.ganador_id) {
-              showWinner(payload.new.ganador_nombre || `Cartón #${payload.new.ganador_id}`);
-            }
+// 🟡 FILA
+if (payload.new?.premio_fila_ganador_nombre && !payload.old?.premio_fila_ganador_nombre) {
+  mostrarSecuencial(showWinnerFila, payload.new.premio_fila_ganador_nombre);
+}
+
+// 🔵 COLUMNA
+if (payload.new?.premio_columna_ganador_nombre && !payload.old?.premio_columna_ganador_nombre) {
+  mostrarSecuencial(showWinnerColumna, payload.new.premio_columna_ganador_nombre);
+}
+
+// 🏆 CARTÓN LLENO
+if (payload.new?.ganador_id && !payload.old?.ganador_id) {
+  mostrarSecuencial(showWinner, payload.new.ganador_nombre || `Cartón #${payload.new.ganador_id}`);
+}
           }
         )
         .subscribe();
+      supabaseClient
+  .channel('admin-historial-ganadores')
+  .on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'historial_ganadores' },
+    async () => {
+      if (document.getElementById('sec-historial').classList.contains('active')) {
+        await cargarHistorialGanadores();
+      }
+    }
+  )
+  .subscribe();
 
       supabaseClient
         .channel('admin-balls')
@@ -832,14 +1005,17 @@
         )
         .subscribe();
     }
-
+   
     async function startAutoGame() {
       const resultadoAprobacion = await aprobarComprasPendientes();
       if (resultadoAprobacion === false) return;
 
       if (!confirm('¿Iniciar nuevo juego automático?')) return;
-
-      document.getElementById('winnerDisplay').classList.remove('active');
+document.getElementById('winnerDisplay').classList.remove('active');
+      document.getElementById('winnerFila').classList.remove('active');
+document.getElementById('winnerColumna').classList.remove('active');
+colaGanadores = [];
+mostrando = false;
 
       const { data, error } = await supabaseClient
         .from('bingo_automatico')
@@ -1601,6 +1777,8 @@ async function eliminarPromo(id) {
       }
 
       document.getElementById('winnerDisplay').classList.remove('active');
+      document.getElementById('winnerFila').classList.remove('active');
+document.getElementById('winnerColumna').classList.remove('active');
       document.getElementById('currentBallDisplay').style.display = 'none';
       document.getElementById('waitingMsg').style.display = 'block';
       document.getElementById('waitingMsg').textContent = 'Sistema reiniciado. Todos los cartones quedaron libres.';
