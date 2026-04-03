@@ -900,7 +900,7 @@ let temporizadorReinicio = null;
     async function cargarCartonesEnSala() {
       const { data, error } = await supabaseClient
         .from('cartones_vendidos')
-        .select('numero_carton, nombre, cedula')
+        .select('numero_carton, nombre, cedula, telefono')
         .order('numero_carton', { ascending: true });
 
       if (error) {
@@ -911,7 +911,8 @@ let temporizadorReinicio = null;
       cartonesEnSala = (data || []).map(item => ({
         numero_carton: Number(item.numero_carton),
         nombre: item.nombre || 'Jugador',
-        cedula: item.cedula || ''
+        cedula: item.cedula || '',
+        telefono: item.telefono || ''
       }));
 
       cartonesEnSala.forEach(item => asegurarTrackingCarton(item.numero_carton));
@@ -1232,6 +1233,7 @@ let temporizadorReinicio = null;
           numero_carton: numero,
           nombre: encontrado.nombre || 'Jugador',
           cedula: encontrado.cedula || '',
+          telefono: encontrado.telefono || '',
           esMio: esCedulaDelJugador(encontrado.cedula)
         };
       }
@@ -1240,6 +1242,7 @@ let temporizadorReinicio = null;
         numero_carton: numero,
         nombre: datosJugador.nombre || 'Jugador',
         cedula: datosJugador.cedula || '',
+        telefono: datosJugador.telefono || '',
         esMio: cartonesComprados.includes(numero)
       };
     }
@@ -1371,7 +1374,7 @@ let temporizadorReinicio = null;
           `${info.nombre} ganó con el cartón #${numeroCarton}`
         );
       }
-
+await guardarHistorialGanador('fila', numeroCarton);
       return;
     }
 
@@ -1395,7 +1398,7 @@ let temporizadorReinicio = null;
           `${info.nombre} ganó con el cartón #${numeroCarton}`
         );
       }
-
+await guardarHistorialGanador('columna', numeroCarton);
       return;
     }
 
@@ -1754,6 +1757,7 @@ function marcarNumeroEnCarton(numeroCarton, numero) {
 
         if (data && data.length > 0) {
   mostrarGanador(numeroCarton);
+          await guardarHistorialGanador('lleno', numeroCarton);
 
   if (temporizadorReinicio) clearTimeout(temporizadorReinicio);
   temporizadorReinicio = setTimeout(async () => {
@@ -1852,6 +1856,28 @@ function marcarNumeroEnCarton(numeroCarton, numero) {
       setTimeout(() => banner.classList.remove('active'), 5000);
     }
     
+    async function guardarHistorialGanador(tipoPremio, numeroCarton) {
+  try {
+    const info = obtenerInfoCarton(numeroCarton);
+
+    const { error } = await supabaseClient
+      .from('historial_ganadores')
+      .insert([{
+        tipo_premio: tipoPremio,
+        nombre: info.nombre || '',
+        cedula: info.cedula || '',
+        telefono: info.telefono || '',
+        numero_carton: Number(numeroCarton),
+        juego_id: gameId
+      }]);
+
+    if (error) {
+      console.error(`Error guardando historial de ${tipoPremio}:`, error);
+    }
+  } catch (e) {
+    console.error('Error guardando historial:', e);
+  }
+}
     async function reiniciarDespuesDelJuego() {
   if (reinicioProgramado) return;
   reinicioProgramado = true;
