@@ -1475,35 +1475,41 @@ let temporizadorReinicio = null;
       suscripciones.push(gameSub, ballSub, vendidosSub, comprasSub);
     }
 
-    async function verificarEstadoActual() {
-      try {
-        const { data, error } = await supabaseClient
-          .from('bingo_automatico')
-          .select('*')
-          .order('id', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+   async function verificarEstadoActual() {
+  try {
+    const { data, error } = await supabaseClient
+      .from('bingo_automatico')
+      .select('*')
+      .order('id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-        if (error) throw error;
-        if (!data) return;
+    if (error) throw error;
+    if (!data) return;
 
-        await Promise.all([cargarCartonesEnSala(), cargarResumenPremios()]);
+    await Promise.all([cargarCartonesEnSala(), cargarResumenPremios()]);
 
-        gameId = data.id;
-        await manejarCambioJuego(data, null);
+    gameId = data.id;
 
-        if (data.estado === 'jugando') {
-          await cargarBolasAnteriores(data.id);
-        }
-
-        if (data.ganador_id) {
-          mostrarGanadorFinal(data.ganador_id, data.ganador_nombre);
-        }
-      } catch (error) {
-        console.error('❌ Error verificando estado:', error);
-      }
+    if (data.estado === 'finalizado') {
+      document.getElementById('estadoJuego').className = 'estado-juego estado-esperando';
+      document.getElementById('estadoJuego').textContent = '⏳ ESPERANDO NUEVO JUEGO...';
+      document.getElementById('bolaActual').style.display = 'none';
+      document.getElementById('esperandoMensaje').style.display = 'block';
+      document.getElementById('esperandoMensaje').textContent =
+        'Esperando que el administrador inicie un nuevo juego...';
+      return;
     }
 
+    await manejarCambioJuego(data, null);
+
+    if (data.estado === 'jugando') {
+      await cargarBolasAnteriores(data.id);
+    }
+  } catch (error) {
+    console.error('❌ Error verificando estado:', error);
+  }
+}
     async function cargarBolasAnteriores(juegoId) {
       try {
         const { data: bolas, error } = await supabaseClient
@@ -1563,7 +1569,7 @@ let temporizadorReinicio = null;
           estadoEl.className = 'estado-juego estado-finalizado';
           estadoEl.textContent = '🔴 JUEGO FINALIZADO';
           if (juego.ganador_id) {
-            mostrarGanadorFinal(juego.ganador_id, juego.ganador_nombre);
+           mostrarGanadorFinal(juego.ganador_id, juego.ganador_nombre, false);
           }
           break;
       }
@@ -1772,31 +1778,32 @@ function marcarNumeroEnCarton(numeroCarton, numero) {
       crearConfeti();
     }
 
-    function mostrarGanadorFinal(ganadorId, ganadorNombre) {
-      const ganadorNum = parseInt(ganadorId, 10);
-      const previo = document.getElementById('resultadoFinalMsg');
-      if (previo) previo.remove();
+    function mostrarGanadorFinal(ganadorId, ganadorNombre, programarReinicio = true) {
+  const ganadorNum = parseInt(ganadorId, 10);
+  const previo = document.getElementById('resultadoFinalMsg');
+  if (previo) previo.remove();
 
-      if (cartonesComprados.includes(ganadorNum)) {
-        mostrarGanador(ganadorNum);
-        return;
-      }
-      if (!temporizadorReinicio) {
-  temporizadorReinicio = setTimeout(async () => {
-    await reiniciarDespuesDelJuego();
-  }, 8000);
+  if (cartonesComprados.includes(ganadorNum)) {
+    mostrarGanador(ganadorNum);
+    return;
+  }
+
+  if (programarReinicio && !temporizadorReinicio) {
+    temporizadorReinicio = setTimeout(async () => {
+      await reiniciarDespuesDelJuego();
+    }, 8000);
+  }
+
+  const estadoEl = document.getElementById('estadoJuego');
+  estadoEl.textContent = `🏆 Ganó: ${ganadorNombre || 'Cartón #' + ganadorId}`;
+
+  const mensaje = document.createElement('div');
+  mensaje.id = 'resultadoFinalMsg';
+  mensaje.className = 'mensaje-final-juego';
+  mensaje.style.cssText = 'text-align: center; padding: 20px; background: rgba(231, 76, 60, 0.2); border-radius: 15px; margin: 20px 0; color: var(--danger);';
+  mensaje.innerHTML = `<h3>🏆 Juego terminado</h3><p>Ganador: ${ganadorNombre || 'Cartón #' + ganadorId}</p>`;
+  document.querySelector('.container').insertBefore(mensaje, document.getElementById('cartonesContainer'));
 }
-
-      const estadoEl = document.getElementById('estadoJuego');
-      estadoEl.textContent = `🏆 Ganó: ${ganadorNombre || 'Cartón #' + ganadorId}`;
-
-      const mensaje = document.createElement('div');
-      mensaje.id = 'resultadoFinalMsg';
-      mensaje.className = 'mensaje-final-juego';
-      mensaje.style.cssText = 'text-align: center; padding: 20px; background: rgba(231, 76, 60, 0.2); border-radius: 15px; margin: 20px 0; color: var(--danger);';
-      mensaje.innerHTML = `<h3>🏆 Juego terminado</h3><p>Ganador: ${ganadorNombre || 'Cartón #' + ganadorId}</p>`;
-      document.querySelector('.container').insertBefore(mensaje, document.getElementById('cartonesContainer'));
-    }
 
     function agregarAlHistorial(numero, letra) {
       const container = document.getElementById('historialBolas');
