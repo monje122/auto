@@ -786,11 +786,28 @@
     let premiosMostrados = { fila: null, columna: null, lleno: null };
     let reinicioProgramado = false;
 let temporizadorReinicio = null;
+    let rotacionCartones = 0;
 
     const RANGOS = {
       B: [1, 15], I: [16, 30], N: [31, 45], G: [46, 60], O: [61, 75]
     };
 
+    async function cargarRotacionCartones() {
+  const { data, error } = await supabaseClient
+    .from('configuracion')
+    .select('valor')
+    .eq('clave', 'rotacion_cartones')
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error cargando rotación de cartones:', error);
+    rotacionCartones = 0;
+    return;
+  }
+
+  const valor = parseInt(data?.valor ?? '0', 10);
+  rotacionCartones = Number.isInteger(valor) && valor >= 0 ? valor : 0;
+}
     function generarVariantesCedula(valor) {
       const limpio = (valor || '').trim().toUpperCase().replace(/\s+/g, '');
       const digitos = limpio.replace(/\D/g, '');
@@ -937,6 +954,7 @@ let temporizadorReinicio = null;
     }
 
     async function init() {
+      await cargarRotacionCartones();
       const cedulaGuardada = sessionStorage.getItem('cedulaComprador');
       if (cedulaGuardada) {
         document.getElementById('inputCedula').value = cedulaGuardada;
@@ -1167,7 +1185,7 @@ let temporizadorReinicio = null;
     }
 
     function generarCartonDesdeNumero(numeroCarton) {
-      let seed = numeroCarton * 12345;
+       let seed = (Number(numeroCarton) * 12345) + (rotacionCartones * 99991);
       const random = () => {
         seed = (seed * 9301 + 49297) % 233280;
         return seed / 233280;
