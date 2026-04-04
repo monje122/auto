@@ -1510,6 +1510,7 @@ let temporizadorReinicio = null;
 
     if (data.estado === 'jugando') {
       await cargarBolasAnteriores(data.id);
+       renderizarPaginaCartones();
     }
   } catch (error) {
     console.error('❌ Error verificando estado:', error);
@@ -1521,7 +1522,7 @@ let temporizadorReinicio = null;
           .from('bolas_auto')
           .select('*')
           .eq('juego_id', juegoId)
-          .order('creado_en', { ascending: true });
+          .order('sacada_en', { ascending: true });
 
         if (error) throw error;
 
