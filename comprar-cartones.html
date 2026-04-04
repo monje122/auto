@@ -641,7 +641,7 @@
     
     <div class="header">
       <h1>🛒 COMPRAR CARTONES</h1>
-      <p>Elige tus cartones del 1 al 1000. Tienes 5 minutos para confirmar tu pago.</p>
+      <p>Elige tus cartones . Tienes 5 minutos para confirmar tu pago.</p>
     </div>
 
     <div class="steps-container">
@@ -725,7 +725,7 @@
 
     <!-- PASO 3: SELECCIONAR CARTONES -->
     <section id="step3" class="section">
-      <h2>🎫 Elige tus Cartones (1-1000)</h2>
+      <h2>🎫 Elige tus Cartones </h2>
       
       <p style="text-align: center; margin-bottom: 20px; color: rgba(255,255,255,0.8);">
         <span style="color: var(--success);">● Verde:</span> Disponible | 
@@ -847,7 +847,7 @@
     let pagoEnviado = false;
     let procesandoSeleccion = false;
     let cartonPreviewNumero = null;
-
+let cantidadCartonesDisponibles = 1000;
     const RANGOS_CARTON = {
       B: [1, 15],
       I: [16, 30],
@@ -866,6 +866,26 @@
 
       return prefijo ? `${prefijo}-${digitos}` : digitos;
     }
+    
+    async function cargarCantidadCartonesDisponibles() {
+  const { data, error } = await supabaseClient
+    .from('configuracion')
+    .select('valor')
+    .eq('clave', 'cantidad_cartones_disponibles')
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error cargando cantidad disponible:', error);
+    cantidadCartonesDisponibles = 1000;
+    return;
+  }
+
+  cantidadCartonesDisponibles = parseInt(data?.valor || '1000', 10);
+
+  if (!Number.isInteger(cantidadCartonesDisponibles) || cantidadCartonesDisponibles < 1) {
+    cantidadCartonesDisponibles = 1000;
+  }
+}
 
     function generarVariantesCedula(valor) {
       const limpio = normalizarCedula(valor);
@@ -893,12 +913,13 @@
     }
 
     async function init() {
-      restaurarDatosGuardados();
-      await cargarPrecioUnitario();
-      await cargarPromociones();
-      generarGridCartones();
-      iniciarSuscripcionTiempoReal();
-    }
+  restaurarDatosGuardados();
+  await cargarPrecioUnitario();
+  await cargarCantidadCartonesDisponibles();
+  await cargarPromociones();
+  generarGridCartones();
+  iniciarSuscripcionTiempoReal();
+}
 
     async function cargarPrecioUnitario() {
       const { data } = await supabaseClient
@@ -1070,18 +1091,18 @@
     }
 
     function generarGridCartones() {
-      const grid = document.getElementById('gridCartones');
-      grid.innerHTML = '';
+  const grid = document.getElementById('gridCartones');
+  grid.innerHTML = '';
 
-      for (let i = 1; i <= 1000; i++) {
-        const div = document.createElement('div');
-        div.className = 'carton-item';
-        div.dataset.numero = i;
-        div.textContent = i;
-        div.onclick = () => abrirPreviewCarton(i);
-        grid.appendChild(div);
-      }
-    }
+  for (let i = 1; i <= cantidadCartonesDisponibles; i++) {
+    const div = document.createElement('div');
+    div.className = 'carton-item';
+    div.dataset.numero = i;
+    div.textContent = i;
+    div.onclick = () => abrirPreviewCarton(i);
+    grid.appendChild(div);
+  }
+}
 
     async function cargarEstadoCartones() {
       const { data: ocupados } = await supabaseClient
