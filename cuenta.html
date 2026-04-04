@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Mi Cuenta - Bingo Andino 75</title>
+</head>
+<body>
+
+  <h1>👤 Mi cuenta</h1>
+
+  <div>
+    <p><strong>Nombre:</strong> <span id="nombreUsuario">--</span></p>
+    <p><strong>Cédula:</strong> <span id="cedulaUsuario">--</span></p>
+    <p><strong>Teléfono:</strong> <span id="telefonoUsuario">--</span></p>
+    <p><strong>Saldo:</strong> <span id="saldoUsuario">0.00 Bs</span></p>
+  </div>
+
+  <br>
+  <button onclick="cerrarSesion()">Cerrar sesión</button>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script>
+    const SUPABASE_URL = 'https://okwkwgrecwxydjcezcdn.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rd2t3Z3JlY3d4eWRqY2V6Y2RuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA1NzQzNzcsImV4cCI6MjA4NjE1MDM3N30.r-xcTbAoHiy5_qrk9JWQMCqjXERDZKjuecqzLGMBHuQ';
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    function obtenerUsuarioSesion() {
+      try {
+        return JSON.parse(localStorage.getItem('usuario_bingo'));
+      } catch {
+        return null;
+      }
+    }
+
+    function cerrarSesion() {
+      localStorage.removeItem('usuario_bingo');
+      window.location.href = 'login.html';
+    }
+
+    function requerirSesion() {
+      const usuario = obtenerUsuarioSesion();
+      if (!usuario) {
+        window.location.href = 'login.html';
+        return null;
+      }
+      return usuario;
+    }
+
+    async function cargarCuenta() {
+      const usuario = requerirSesion();
+      if (!usuario) return;
+
+      document.getElementById('nombreUsuario').textContent = usuario.nombre || '--';
+      document.getElementById('cedulaUsuario').textContent = usuario.cedula || '--';
+      document.getElementById('telefonoUsuario').textContent = usuario.telefono || '--';
+
+      const { data, error } = await supabaseClient
+        .from('billeteras_bingo')
+        .select('saldo')
+        .eq('usuario_id', usuario.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error cargando saldo:', error);
+        document.getElementById('saldoUsuario').textContent = 'Error';
+        return;
+      }
+
+      const saldo = Number(data?.saldo || 0);
+      document.getElementById('saldoUsuario').textContent = `${saldo.toFixed(2)} Bs`;
+    }
+
+    cargarCuenta();
+  </script>
+
+</body>
+</html>
