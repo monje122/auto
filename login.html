@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Login - Bingo</title>
+</head>
+<body>
+
+  <h2>🔐 Iniciar sesión</h2>
+
+  <input type="text" id="cedula" placeholder="Cédula"><br><br>
+  <input type="password" id="pin" placeholder="PIN"><br><br>
+
+  <button onclick="login()">Entrar</button>
+
+  <p>¿No tienes cuenta? <a href="registro.html">Registrarse</a></p>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script>
+    const supabaseClient = supabase.createClient(
+      'TU_URL',
+      'TU_KEY'
+    );
+
+    function normalizarCedula(valor) {
+      return valor.trim().toUpperCase().replace(/\s+/g, '');
+    }
+
+    async function login() {
+      const cedula = normalizarCedula(document.getElementById('cedula').value);
+      const pin = document.getElementById('pin').value;
+
+      if (!cedula || !pin) {
+        alert('Completa los campos');
+        return;
+      }
+
+      const { data, error } = await supabaseClient
+        .from('usuarios_bingo')
+        .select('*')
+        .eq('cedula', cedula)
+        .maybeSingle();
+
+      if (error || !data) {
+        alert('Usuario no encontrado');
+        return;
+      }
+
+      // ⚠️ por ahora simple (luego mejoramos seguridad)
+      if (data.pin_hash !== pin) {
+        alert('PIN incorrecto');
+        return;
+      }
+
+      // guardar sesión
+      localStorage.setItem('usuario', JSON.stringify(data));
+
+      alert('Bienvenido ' + data.nombre);
+
+      window.location.href = 'index.html'; // o tu home
+    }
+  </script>
+
+</body>
+</html>
