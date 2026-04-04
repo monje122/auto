@@ -670,6 +670,34 @@
             <span id="precioActualInfo" style="color: rgba(255,255,255,0.7);">Cargando precio actual...</span>
           </div>
         </div>
+        
+        <div class="form-card">
+  <h3>🎫 Cantidad de cartones disponibles</h3>
+  <p style="color: rgba(255,255,255,0.7); margin-bottom: 20px;">
+    Define cuántos cartones estarán visibles para la venta en <strong>comprar-cartones.html</strong>.
+  </p>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>Cantidad actual</label>
+      <input
+        type="number"
+        id="cantidadCartonesInput"
+        min="1"
+        max="5000"
+        step="1"
+        placeholder="Ej: 1000"
+      >
+    </div>
+  </div>
+
+  <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+    <button class="btn-save" onclick="guardarCantidadCartones()">💾 Guardar cantidad</button>
+    <span id="cantidadCartonesInfo" style="color: rgba(255,255,255,0.7);">
+      Cargando cantidad actual...
+    </span>
+  </div>
+</div>
 
         <div class="form-card" style="border: 2px solid rgba(231,76,60,0.35);">
           <h3 style="color: var(--danger);">🚨 Reinicio general de cartones</h3>
@@ -1646,27 +1674,42 @@ async function eliminarPromo(id) {
       alert('Cartones liberados correctamente');
     }
 
-    async function cargarAjustes() {
-      const input = document.getElementById('precioCartonInput');
-      const info = document.getElementById('precioActualInfo');
-      if (!input || !info) return;
+   async function cargarAjustes() {
+  const precioInput = document.getElementById('precioCartonInput');
+  const precioInfo = document.getElementById('precioActualInfo');
+  const cantidadInput = document.getElementById('cantidadCartonesInput');
+  const cantidadInfo = document.getElementById('cantidadCartonesInfo');
 
-      const { data, error } = await supabaseClient
-        .from('configuracion')
-        .select('clave, valor')
-        .eq('clave', 'precio_carton')
-        .maybeSingle();
+  const { data, error } = await supabaseClient
+    .from('configuracion')
+    .select('clave, valor')
+    .in('clave', ['precio_carton', 'cantidad_cartones_disponibles']);
 
-      if (error) {
-        console.error('Error cargando ajustes:', error);
-        info.textContent = 'No se pudo cargar el precio actual';
-        return;
-      }
+  if (error) {
+    console.error('Error cargando ajustes:', error);
+    if (precioInfo) precioInfo.textContent = 'No se pudo cargar el precio actual';
+    if (cantidadInfo) cantidadInfo.textContent = 'No se pudo cargar la cantidad actual';
+    return;
+  }
 
-      const precio = Number(data?.valor ?? 5);
-      input.value = Number.isFinite(precio) ? precio.toFixed(2) : '5.00';
-      info.textContent = `Precio actual: ${input.value} Bs`;
-    }
+  const mapa = {};
+  (data || []).forEach(item => {
+    mapa[item.clave] = item.valor;
+  });
+
+  if (precioInput && precioInfo) {
+    const precio = Number(mapa['precio_carton'] ?? 5);
+    precioInput.value = Number.isFinite(precio) ? precio.toFixed(2) : '5.00';
+    precioInfo.textContent = `Precio actual: ${precioInput.value} Bs`;
+  }
+
+  if (cantidadInput && cantidadInfo) {
+    const cantidad = parseInt(mapa['cantidad_cartones_disponibles'] ?? '1000', 10);
+    const cantidadFinal = Number.isInteger(cantidad) && cantidad > 0 ? cantidad : 1000;
+    cantidadInput.value = cantidadFinal;
+    cantidadInfo.textContent = `Cantidad actual: ${cantidadFinal} cartones`;
+  }
+}
 
     async function guardarPrecioCarton() {
       const input = document.getElementById('precioCartonInput');
@@ -1714,6 +1757,59 @@ async function eliminarPromo(id) {
       info.textContent = `Precio actual: ${valor} Bs`;
       alert('Precio del cartón actualizado correctamente');
     }
+    
+    async function cargarCantidadCartones() {
+  const input = document.getElementById('cantidadCartonesInput');
+  const info = document.getElementById('cantidadCartonesInfo');
+
+  if (!input || !info) return;
+
+  const { data, error } = await supabaseClient
+    .from('configuracion')
+    .select('valor')
+    .eq('clave', 'cantidad_cartones_disponibles')
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error cargando cantidad de cartones:', error);
+    info.textContent = 'Error cargando cantidad actual';
+    return;
+  }
+
+  const cantidad = parseInt(data?.valor || '1000', 10);
+  input.value = cantidad;
+  info.textContent = `Cantidad actual: ${cantidad} cartones`;
+}
+    
+    async function guardarCantidadCartones() {
+  const input = document.getElementById('cantidadCartonesInput');
+  const info = document.getElementById('cantidadCartonesInfo');
+
+  if (!input || !info) return;
+
+  const cantidad = parseInt(input.value, 10);
+
+  if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 5000) {
+    alert('Ingresa una cantidad válida entre 1 y 5000');
+    return;
+  }
+
+  const { error } = await supabaseClient
+    .from('configuracion')
+    .upsert({
+      clave: 'cantidad_cartones_disponibles',
+      valor: String(cantidad)
+    }, { onConflict: 'clave' });
+
+  if (error) {
+    console.error('Error guardando cantidad de cartones:', error);
+    alert('No se pudo guardar la cantidad');
+    return;
+  }
+
+  info.textContent = `Cantidad actual: ${cantidad} cartones`;
+  alert('Cantidad de cartones guardada correctamente');
+}
 
     async function reiniciarSistemaCartones() {
       const confirmar = confirm('Esto liberará TODOS los cartones apartados y vendidos. ¿Deseas continuar?');
