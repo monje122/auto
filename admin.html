@@ -655,6 +655,30 @@
         <h2 class="section-title">⚙️ Ajustes</h2>
 
         <div class="form-card">
+  <h3>🔄 Rotación de cartones</h3>
+  <p style="color: rgba(255,255,255,0.7); margin-bottom: 20px;">
+    Cambia este valor para regenerar la distribución interna de todos los cartones.
+    El número del cartón se mantiene, pero su contenido cambia.
+  </p>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>Rotación actual</label>
+      <input type="number" id="rotacionCartonesInput" min="0" max="999999" step="1" placeholder="Ej: 0">
+    </div>
+  </div>
+
+  <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+    <button class="btn-save" onclick="guardarRotacionCartones()">💾 Guardar rotación</button>
+    <button class="btn-save" onclick="generarNuevaRotacion()" style="background: var(--info);">🎲 Generar nueva</button>
+    <span id="rotacionCartonesInfo" style="color: rgba(255,255,255,0.7);">
+      Cargando rotación actual...
+    </span>
+  </div>
+</div>
+        
+        
+        <div class="form-card">
           <h3>💵 Precio del cartón</h3>
           <p style="color: rgba(255,255,255,0.7); margin-bottom: 20px;">Este valor se usa en <strong>comprar-cartones.html</strong> para calcular el precio unitario.</p>
 
@@ -1673,22 +1697,30 @@ async function eliminarPromo(id) {
 
       alert('Cartones liberados correctamente');
     }
-
-   async function cargarAjustes() {
+async function cargarAjustes() {
   const precioInput = document.getElementById('precioCartonInput');
   const precioInfo = document.getElementById('precioActualInfo');
+
   const cantidadInput = document.getElementById('cantidadCartonesInput');
   const cantidadInfo = document.getElementById('cantidadCartonesInfo');
+
+  const rotacionInput = document.getElementById('rotacionCartonesInput');
+  const rotacionInfo = document.getElementById('rotacionCartonesInfo');
 
   const { data, error } = await supabaseClient
     .from('configuracion')
     .select('clave, valor')
-    .in('clave', ['precio_carton', 'cantidad_cartones_disponibles']);
+    .in('clave', [
+      'precio_carton',
+      'cantidad_cartones_disponibles',
+      'rotacion_cartones'
+    ]);
 
   if (error) {
     console.error('Error cargando ajustes:', error);
     if (precioInfo) precioInfo.textContent = 'No se pudo cargar el precio actual';
     if (cantidadInfo) cantidadInfo.textContent = 'No se pudo cargar la cantidad actual';
+    if (rotacionInfo) rotacionInfo.textContent = 'No se pudo cargar la rotación actual';
     return;
   }
 
@@ -1709,6 +1741,52 @@ async function eliminarPromo(id) {
     cantidadInput.value = cantidadFinal;
     cantidadInfo.textContent = `Cantidad actual: ${cantidadFinal} cartones`;
   }
+
+  if (rotacionInput && rotacionInfo) {
+    const rotacion = parseInt(mapa['rotacion_cartones'] ?? '0', 10);
+    const rotacionFinal = Number.isInteger(rotacion) && rotacion >= 0 ? rotacion : 0;
+    rotacionInput.value = rotacionFinal;
+    rotacionInfo.textContent = `Rotación actual: ${rotacionFinal}`;
+  }
+}
+    
+    async function guardarRotacionCartones() {
+  const input = document.getElementById('rotacionCartonesInput');
+  const info = document.getElementById('rotacionCartonesInfo');
+
+  if (!input || !info) return;
+
+  const rotacion = parseInt(input.value, 10);
+
+  if (!Number.isInteger(rotacion) || rotacion < 0 || rotacion > 999999) {
+    alert('Ingresa una rotación válida entre 0 y 999999');
+    return;
+  }
+
+  const { error } = await supabaseClient
+    .from('configuracion')
+    .upsert(
+      [{ clave: 'rotacion_cartones', valor: String(rotacion) }],
+      { onConflict: 'clave' }
+    );
+
+  if (error) {
+    console.error('Error guardando rotación:', error);
+    alert('No se pudo guardar la rotación');
+    return;
+  }
+
+  info.textContent = `Rotación actual: ${rotacion}`;
+  alert('Rotación guardada correctamente');
+}
+    
+    async function generarNuevaRotacion() {
+  const nuevaRotacion = Math.floor(Date.now() / 1000);
+
+  const input = document.getElementById('rotacionCartonesInput');
+  if (input) input.value = nuevaRotacion;
+
+  await guardarRotacionCartones();
 }
 
     async function guardarPrecioCarton() {
