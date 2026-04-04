@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Registro</title>
+</head>
+<body>
+
+<h2>📝 Registro</h2>
+
+<input type="text" id="nombre" placeholder="Nombre"><br><br>
+<input type="text" id="telefono" placeholder="Teléfono"><br><br>
+<input type="text" id="cedula" placeholder="Cédula"><br><br>
+<input type="password" id="pin" placeholder="PIN"><br><br>
+
+<button onclick="registrar()">Crear cuenta</button>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+const supabaseClient = supabase.createClient(
+  'TU_URL',
+  'TU_KEY'
+);
+
+// 🔧 misma función que ya usas en tu sistema
+function normalizarCedula(valor) {
+  return valor.trim().toUpperCase().replace(/\s+/g, '');
+}
+
+async function registrar() {
+  const nombre = document.getElementById('nombre').value.trim();
+  const telefono = document.getElementById('telefono').value.trim();
+  const cedula = normalizarCedula(document.getElementById('cedula').value);
+  const pin = document.getElementById('pin').value;
+
+  if (!nombre || !telefono || !cedula || !pin) {
+    alert('Completa todo');
+    return;
+  }
+
+  // verificar si ya existe
+  const { data: existente } = await supabaseClient
+    .from('usuarios_bingo')
+    .select('id')
+    .eq('cedula', cedula)
+    .maybeSingle();
+
+  if (existente) {
+    alert('Ya existe una cuenta con esa cédula');
+    return;
+  }
+
+  // crear usuario
+  const { data, error } = await supabaseClient
+    .from('usuarios_bingo')
+    .insert([{
+      nombre,
+      telefono,
+      cedula,
+      pin_hash: pin
+    }])
+    .select()
+    .single();
+
+  if (error) {
+    alert('Error: ' + error.message);
+    return;
+  }
+
+  // crear billetera
+  const { error: billeteraError } = await supabaseClient
+    .from('billeteras_bingo')
+    .insert([{
+      usuario_id: data.id,
+      saldo: 0
+    }]);
+
+  if (billeteraError) {
+    alert('Error creando billetera');
+    return;
+  }
+
+  alert('Cuenta creada correctamente 🎉');
+
+  window.location.href = 'login.html';
+}
+</script>
+
+</body>
+</html>
